@@ -1,0 +1,16 @@
+# Use an official Node runtime as the base image
+FROM node:20
+
+# Set the working directory in the container
+WORKDIR /app
+
+# Install dependencies
+# Note: We only copy the package.json and package-lock.json (if available) to leverage Docker cache
+COPY package*.json ./
+RUN npm install
+
+# Expose the port the app runs on
+EXPOSE 3000
+
+# Command to run the application
+CMD ["npm", "run", "dev"]

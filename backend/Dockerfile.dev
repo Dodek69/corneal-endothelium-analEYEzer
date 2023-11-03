@@ -1,0 +1,19 @@
+FROM tensorflow/tensorflow:2.14.0-gpu
+
+# Prevents Python from writing pyc files to disc (equivalent to python -B option)
+ENV PYTHONDONTWRITEBYTECODE 1
+# Prevents Python from buffering stdout and stderr (equivalent to python -u option)
+ENV PYTHONUNBUFFERED 1
+
+WORKDIR /app
+
+COPY requirements.txt .
+
+# Install any needed packages specified in requirements.txt
+RUN pip install --upgrade pip \ 
+    && pip install -r requirements.txt
+
+EXPOSE 8000
+
+# Command to run the application
+CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]
