@@ -1,11 +1,9 @@
 import tensorflow as tf
 
 @tf.function
-def load_images_dataset(files, **kwargs):
+def load_images_dataset(image_bytes_list, **kwargs):
     # Convert files to a dataset of image contents
-    image_bytes = [file.read() for file in files] # list of bytes
-    dataset = tf.data.Dataset.from_tensor_slices(image_bytes) # dataset of bytes
-
+    dataset = tf.data.Dataset.from_tensor_slices(image_bytes_list) # dataset of bytes
     # Apply processing to each image
     processed_images = dataset.map(load_image)  # dataset of EagerTensors of shape (None, None, 3)
     return processed_images
@@ -14,7 +12,6 @@ def load_images_dataset(files, **kwargs):
 def load_image(bytes):
     image = tf.io.decode_image(bytes, channels=3, dtype=tf.uint8)
     image = tf.image.convert_image_dtype(image, tf.float32)
-
     return image
 
 @tf.function
@@ -39,7 +36,6 @@ def apply_padding_and_return_shape(image, patch_size):
     # Apply padding
     padded_image = tf.pad(image, padding, mode='constant', constant_values=0)
     return padded_image, original_shape
-
 
 @tf.function
 def extract_patches(image, patch_size):

@@ -1,6 +1,9 @@
 from api.analysis.pipelines.base_processing_pipeline import BaseProcessingPipeline
 from api.analysis.processing.preprocessing import load_images_dataset, pad_dataset, split_images_into_patches
 from api.analysis.processing.postprocessing import recombine_patches
+import logging
+
+logger = logging.getLogger(__name__)
 
 class PatchedToSingleChannelPipeline(BaseProcessingPipeline):
     DEFAULT_THRESHOLD = 0.1
@@ -19,13 +22,16 @@ class PatchedToSingleChannelPipeline(BaseProcessingPipeline):
         threshold = threshold or self.threshold
         batch_size = batch_size or self.batch_size
         patch_size = self.model.model.input_shape[1:3]
-        
+        logger.debug(f"Loading images...")
         images_dataset = load_images_dataset(files)
+        logger.debug(f"Padding...")
         padded_dataset, original_shapes = pad_dataset(images_dataset, patch_size, **kwargs)
+        logger.debug(f"Splitting...")
         patched_images_dataset, patch_counts = split_images_into_patches(padded_dataset, patch_size)
         patched_images_dataset = patched_images_dataset.batch(self.batch_size)
-        
+        logger.debug(f"Making predictions...")
         predictions = self.model.predict(patched_images_dataset)
+        logger.debug(f"Recombining...")
         return recombine_patches(predictions, images_dataset, original_shapes, patch_counts, patch_size, threshold=threshold)
     
     def load_model(self):

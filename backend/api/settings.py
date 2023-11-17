@@ -153,3 +153,8 @@ LOGGING = {
         "level": "DEBUG",
     },
 }
+
+# Celery
+
+CELERY_BROKER_URL = 'amqp://user:password@rabbitmq:5672/'
+CELERY_RESULT_BACKEND = 'rpc://'
