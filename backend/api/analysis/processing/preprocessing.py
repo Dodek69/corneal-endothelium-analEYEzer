@@ -10,8 +10,7 @@ def load_images_dataset(image_bytes_list, **kwargs):
 
 @tf.function
 def load_image(bytes):
-    image = tf.io.decode_image(bytes, channels=3, dtype=tf.uint8)
-    image = tf.image.convert_image_dtype(image, tf.float32)
+    image = tf.io.decode_image(bytes, channels=3, dtype=tf.float32)
     return image
 
 @tf.function
