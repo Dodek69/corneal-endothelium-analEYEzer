@@ -15,12 +15,32 @@ class AnalysisView(APIView):
     def post(self, request, *args, **kwargs):
         files = request.FILES.getlist('files')
         file_paths = request.data.getlist('paths')
+        masks = request.data.getlist('masks')
+        logger.debug(f'Length of masks: {len(masks)}')
+        for i, mask in enumerate(masks):
+            print("====================================")
+            print(files[i])
+            print(mask)
+            if mask == None:
+                print("mask is none")
+            if not mask:
+                print("mask is empty")
+            print("====================================")
+            
+            
+        predictionsPath = request.data.get('predictionsPath')
+        overlayedPath = request.data.get('overlayedPath')
+        areaParameter = float(request.data.get('areaParameter'))
         
         file_bytes_list = [file.read() for file in files]
         
+        # Convert masks to bytes if they are not None
+        mask_bytes_list = [mask.read() if mask else None for mask in masks]
+        logger.debug(f'Length of mask_bytes_list: {len(mask_bytes_list)}')
+        
         logger.debug(f'Creating task to process {len(files)} images')
         try:
-            task = process_image.delay(file_bytes_list, file_paths)
+            task = process_image.delay(file_bytes_list, file_paths, mask_bytes_list, predictionsPath, overlayedPath, areaParameter)
         except Exception as e:
             logger.error(f'Error while processing images: {e}')
             return Response(str(e), status=status.HTTP_400_BAD_REQUEST)

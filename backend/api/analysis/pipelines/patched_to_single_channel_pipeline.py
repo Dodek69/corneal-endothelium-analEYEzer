@@ -30,9 +30,10 @@ class PatchedToSingleChannelPipeline(BaseProcessingPipeline):
         patched_images_dataset, patch_counts = split_images_into_patches(padded_dataset, patch_size)
         patched_images_dataset = patched_images_dataset.batch(self.batch_size)
         logger.debug(f"Making predictions...")
-        predictions = self.model.predict(patched_images_dataset)
+        predictions = self.model.predict(patched_images_dataset) # numpy array of shape (n, patch_size, patch_size, 1) float32 in range [0, 1]
+        
         logger.debug(f"Recombining...")
-        return recombine_patches(predictions, images_dataset, original_shapes, patch_counts, patch_size, threshold=threshold)
+        return recombine_patches(predictions, original_shapes, patch_counts, patch_size), images_dataset
     
     def load_model(self):
         super().load_model()

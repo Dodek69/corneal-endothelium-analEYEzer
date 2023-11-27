@@ -158,3 +158,6 @@ LOGGING = {
 
 CELERY_BROKER_URL = 'amqp://user:password@rabbitmq:5672/'
 CELERY_RESULT_BACKEND = 'rpc://'
+
+
+DATA_UPLOAD_MAX_NUMBER_FILES = 1000

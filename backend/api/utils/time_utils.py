@@ -1,10 +1,12 @@
 import time
 import logging
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
 def get_timestamp_string():
-    return time.strftime("%Y-%m-%d_%H-%M-%S-%f")
+    current_datetime = datetime.now()
+    return current_datetime.strftime("%Y-%m-%d_%H-%M-%S-%f")
 
 def start_timer():
     """Start timer to measure execution time."""
