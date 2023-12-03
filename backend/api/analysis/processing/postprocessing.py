@@ -114,7 +114,6 @@ def recombine_patches(predictions, original_shapes, patch_counts, patch_size):
         # Add to the list of recombined images
         recombined_images.append(recombined_image)
         
-    predictions = []
     return recombined_images
 
 def close_and_skeletonize(img):
@@ -156,3 +155,40 @@ def find_label_meetings(labelled_image, num_labels):
                         num_meetings[label - 1] += 1
 
     return num_meetings, meeting_points
+
+
+def visualize_labels(original_image, labelled_image, points):
+    logger.debug(f"Starting visualize_labels")
+    
+    original_image_8bit = np.uint8(255 * original_image)
+    num_labels = np.max(labelled_image) + 1  # Including background
+    random_colors = np.random.randint(0, 255, size=(num_labels, 3))
+
+    # Create an empty color image for the labels
+    colored_labels = np.zeros_like(original_image_8bit)
+
+    # Assign random colors to each label
+    for label in range(1, num_labels):  # Skip background
+        colored_labels[labelled_image == label] = random_colors[label]
+
+    # Create a mask for non-zero labels
+    mask = labelled_image > 0
+
+    # Initialize an empty image for the overlay
+    overlayed_image = np.zeros_like(original_image_8bit)
+
+    # Alpha factor (transparency)
+    alpha = 0.2
+
+    # Apply the overlay with transparency only on labeled regions
+    for i in range(3):  # Loop through color channels
+        overlayed_image[:, :, i] = np.where(
+            mask,
+            np.uint8(alpha * colored_labels[:, :, i] + (1 - alpha) * original_image_8bit[:, :, i]),
+            original_image_8bit[:, :, i]
+        )
+        
+        
+    for point in points:
+        cv2.circle(overlayed_image, point, radius=2, color=(0, 255, 0), thickness=-1)  # Green point
+    return overlayed_image

@@ -5,69 +5,60 @@ const path = require('path');
 function UploadPage() {
   const [files, setFiles] = useState<File[]>([]);
   const [masks, setMasks] = useState<(File | null)[]>([]);
-  const [maskDirectory, setMaskDirectory] = useState<string>('../../Mask/'); // Added state for mask directory
+  const [maskDirectories, setMaskDirectories] = useState<string[]>(['../../Mask/', '../../K/']);
   const [predictionsPath, setPredictionsPath] = useState<string>('../../Predictions/{name}{ext}');
   const [overlayedPath, setOverlayedPath] = useState<string>('../../Overlayed/{name}{ext}');
   const [areaParameter, setAreaParameter] = useState<string>('1');
-  
+  const [generateLabelledImages, setGenerateLebelledImage] = useState<boolean>(true);
+  const [labelledImagesPath, setLabelledImagePath] = useState<string>('../../Labelled/{name}{ext}');
   
   const [message, setMessage] = useState<string>('');
   const [deleteFloatingFiles, setDeleteFloatingFiles] = useState<boolean>(true);
   //const [deleteFloatingMasks, setDeleteFloatingMasks] = useState<boolean>(true);
   const [compareMasks, setCompareMasks] = useState<boolean>(true);
 
-  function getMaskPath(originalImagePath: string) {
+  function getMaskPaths(originalImagePath: string) {
     const originalDir = path.dirname(originalImagePath);
     const filename = path.basename(originalImagePath);
-    const newPath = path.join(originalDir, maskDirectory, filename); // Use maskDirectory here
-    return newPath;
+  
+    return maskDirectories.map(directory => path.join(originalDir, directory, filename));
   }
-
-  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    if (event.target.files) {
-      const fileArray = Array.from(event.target.files);
-      // copy fileArray
-      const fileArrayCopy = [...fileArray];
   
-      // Initialize an array to store the mask files
-      const newFiles : File[] = [];
-      const newMasks : (File | null)[] = [];
-  
-      // Process each file
-      for (const file of fileArray) {
-        // Check if the file is an image
-        if (file.type.startsWith('image/')) {
-          // Construct the path to the corresponding mask file
-          const maskPath = getMaskPath(file.webkitRelativePath || file.name, '../../Mask/');
-          console.log("====================================");
-          console.log(file.webkitRelativePath);
-          console.log(maskPath);
 
-          
-          // Check if the mask file exists in the file list
-          const maskFile = fileArray.find(f => f.webkitRelativePath === maskPath);
-          if (maskFile) {
-            console.log("Found mask file");
-            if (maskFile === file) {
-              console.log("Found mask instantly");
-              continue;
+    const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+      if (event.target.files) {
+        const fileArray = Array.from(event.target.files);
+    
+        // Initialize arrays to store the files and masks
+        const newFiles: File[] = [];
+        const newMasks: (File | null)[] = [];
+    
+        for (const file of fileArray) {
+          if (file.type.startsWith('image/')) {
+            // Get an array of possible mask paths
+            const maskPaths = getMaskPaths(file.webkitRelativePath || file.name);
+            console.log("maskPaths:", maskPaths);
+            let maskFound = false;
+            for (const maskPath of maskPaths) {
+              const maskFile = fileArray.find(f => f.webkitRelativePath === maskPath);
+              if (maskFile) {
+                console.log("Found mask file at:", maskPath);
+                newMasks.push(maskFile);
+                newFiles.push(file);
+                maskFound = true;
+                break; // Stop searching once a mask is found
+              }
             }
-            
-            // Add the mask file to the newMasks array
-            newMasks.push(maskFile);
-            newFiles.push(file);
-          }
-          else {
-            console.log("Mask file not found");
-            if (!deleteFloatingFiles)
-            {
-              newFiles.push(file);
-              newMasks.push(null);
+    
+            if (!maskFound) {
+              console.log("Mask file not found for", file.name);
+              if (!deleteFloatingFiles) {
+                newFiles.push(file);
+                newMasks.push(null);
+              }
             }
           }
-          console.log("====================================");
         }
-      }
 
       // console log length of fileArray and newMasks
       console.log("====================================");
@@ -108,6 +99,8 @@ function UploadPage() {
       formData.append('predictionsPath', predictionsPath);
       formData.append('overlayedPath', overlayedPath);
       formData.append('areaParameter', areaParameter);
+      formData.append('generateLabelledImages', generateLabelledImages.toString());
+      formData.append('labelledImagesPath', labelledImagesPath);
       
       // Assuming masks is an array of file or null
       const correspondingMask = masks[index];
@@ -147,6 +140,9 @@ function UploadPage() {
   const handleCompareMasksChange = () => {
     setCompareMasks(!compareMasks);
   };
+  const handleGenerateLebelledImageChange = () => {
+    setGenerateLebelledImage(!generateLabelledImages);
+  };
 
   return (
     <div>
@@ -180,13 +176,33 @@ function UploadPage() {
             </label>
         </div>
         <div>
-          <label>Mask Directory:</label>
-          <input 
-            type="text" 
-            value={maskDirectory} 
-            onChange={(e) => setMaskDirectory(e.target.value)} 
-            style={{ color: 'black' }}
-          />
+            <label>
+                <input
+                    type="checkbox"
+                    checked={generateLabelledImages}
+                    onChange={handleGenerateLebelledImageChange}
+                />
+                Generate labelled images
+            </label>
+        </div>
+        <div>
+          <label>Mask Directories:</label>
+          {maskDirectories.map((directory, index) => (
+            <input 
+              key={index}
+              type="text" 
+              value={directory} 
+              onChange={(e) => {
+                const newDirectories = [...maskDirectories];
+                newDirectories[index] = e.target.value;
+                setMaskDirectories(newDirectories);
+              }} 
+              style={{ color: 'black' }}
+            />
+          ))}
+          <button onClick={() => setMaskDirectories([...maskDirectories, ''])}>
+            Add More
+          </button>
         </div>
         <div>
           <label>Predictions relative path:</label>
@@ -206,6 +222,16 @@ function UploadPage() {
             style={{ color: 'black' }}
           />
         </div>
+        { generateLabelledImages && 
+        <div>
+          <label>Labelled image relative path</label>
+          <input 
+            type="text" 
+            value={labelledImagesPath} 
+            onChange={(e) => setLabelledImagePath(e.target.value)} 
+            style={{ color: 'black' }}
+          />
+        </div>}
         <div>
           <label>Area in mm:</label>
           <input 

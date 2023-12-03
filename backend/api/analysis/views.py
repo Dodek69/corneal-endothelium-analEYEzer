@@ -31,6 +31,14 @@ class AnalysisView(APIView):
         predictionsPath = request.data.get('predictionsPath')
         overlayedPath = request.data.get('overlayedPath')
         areaParameter = float(request.data.get('areaParameter'))
+        generateLabelledImages = request.data.get('generateLabelledImages')
+        logger.debug(f"raw generate labelled images: {generateLabelledImages}")
+        if generateLabelledImages == 'true':
+            generateLabelledImages = True
+        else:
+            generateLabelledImages = False
+        logger.debug(f"not raw generate labelled images: {generateLabelledImages}")
+        labelledImagesPath = request.data.get('labelledImagesPath')
         
         file_bytes_list = [file.read() for file in files]
         
@@ -40,7 +48,7 @@ class AnalysisView(APIView):
         
         logger.debug(f'Creating task to process {len(files)} images')
         try:
-            task = process_image.delay(file_bytes_list, file_paths, mask_bytes_list, predictionsPath, overlayedPath, areaParameter)
+            task = process_image.delay(file_bytes_list, file_paths, mask_bytes_list, predictionsPath, overlayedPath, areaParameter, generateLabelledImages, labelledImagesPath)
         except Exception as e:
             logger.error(f'Error while processing images: {e}')
             return Response(str(e), status=status.HTTP_400_BAD_REQUEST)

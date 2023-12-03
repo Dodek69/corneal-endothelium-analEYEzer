@@ -8,9 +8,9 @@ logger = logging.getLogger(__name__)
 
 def save_image(image_array):
     try:
-        logger.debug(f"Initial type: {type(image_array)}")
-        logger.debug(f"Initial shape: {image_array.shape}")
-        logger.debug(f"Initial datatype: {image_array.dtype}")
+        logger.debug(f"Debug: Initial type: {type(image_array)}")
+        logger.debug(f"Debug: Initial shape: {image_array.shape}")
+        logger.debug(f"Debug: Initial datatype: {image_array.dtype}")
 
         if isinstance(image_array, tf.Tensor):
             image_array = image_array.numpy()
@@ -19,11 +19,12 @@ def save_image(image_array):
 
         if normalized:
             image_array = image_array * 255
-            logger.debug("Expanded image values to [0, 255] range")
+            logger.debug("Debug: Expanded image values to [0, 255] range")
         
         image_array = (image_array).astype(np.uint8)
         
         if image_array.ndim == 3 and image_array.shape[-1] == 1:
+            logger.debug("Debug: Reshaping")
             image_array = image_array.reshape(image_array.shape[0], image_array.shape[1])
 
         image = Image.fromarray(image_array)
