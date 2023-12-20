@@ -41,12 +41,12 @@ def extract_patches(image, patch_size):
 # Extract patches
     patches = tf.image.extract_patches(
         images=tf.expand_dims(image, 0),
-        sizes=[1, *patch_size, 1],
-        strides=[1, *patch_size, 1],
+        sizes=[1, *patch_size[:2], 1],
+        strides=[1, *patch_size[:2], 1],
         rates=[1, 1, 1, 1],
         padding='VALID'
     )
-    return tf.reshape(patches, [-1, *patch_size, 3])  # Assuming 3 channels for the image
+    return tf.reshape(patches, [-1, *patch_size])
 
 @tf.function
 def split_images_into_patches(dataset, patch_size):
