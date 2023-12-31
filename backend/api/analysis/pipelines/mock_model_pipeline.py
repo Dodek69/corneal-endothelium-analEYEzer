@@ -14,5 +14,7 @@ class MockModelPipeline(BaseProcessingPipeline):
 
     def load_prediction_from_file(self):
         bytes = tf.io.read_file(self.prediction_image_path)
-        image = load_image(bytes)
-        return [image.numpy()]
+        image = image = tf.io.decode_image(bytes, channels=1, dtype=tf.float32)
+        image_2d = tf.squeeze(image, axis=-1)
+        dataset = tf.data.Dataset.from_tensor_slices([image_2d]) # dataset of bytes
+        return [image_2d.numpy()], dataset

@@ -3,6 +3,7 @@ import tensorflow as tf
 import logging
 import cv2
 from skimage.morphology import skeletonize
+from api.analysis.processing.image_utils import save_image
 
 logger = logging.getLogger(__name__)
 KERNEL_SIZE = (3,3)
