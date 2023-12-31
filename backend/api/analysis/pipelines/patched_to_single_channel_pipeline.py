@@ -21,7 +21,7 @@ class PatchedToSingleChannelPipeline(BaseProcessingPipeline):
     def process(self, files, threshold=None, batch_size=None, **kwargs):
         threshold = threshold or self.threshold
         batch_size = batch_size or self.batch_size
-        patch_size = self.model.model.input_shape[1:3]
+        patch_size = self.model.model.input_shape[1:]
         logger.debug(f"Loading images...")
         images_dataset = load_images_dataset(files)
         logger.debug(f"Padding...")
