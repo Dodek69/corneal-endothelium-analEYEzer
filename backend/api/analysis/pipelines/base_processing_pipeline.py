@@ -11,5 +11,5 @@ class BaseProcessingPipeline(ABC):
         return self.model.load_model()
     
     @abstractmethod
-    def process(self, images, **kwargs):
+    def process(self, input_images, **kwargs):
         pass

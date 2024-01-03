@@ -1,17 +1,17 @@
 import tensorflow as tf
 
 @tf.function
-def load_images_dataset(image_bytes_list, **kwargs):
+def load_image(bytes):
+    image = tf.io.decode_image(bytes, channels=3, dtype=tf.float32)
+    return image
+
+@tf.function
+def load_images_dataset(image_bytes_list):
     # Convert files to a dataset of image contents
     dataset = tf.data.Dataset.from_tensor_slices(image_bytes_list) # dataset of bytes
     # Apply processing to each image
     processed_images = dataset.map(load_image)  # dataset of EagerTensors of shape (None, None, 3)
     return processed_images
-
-@tf.function
-def load_image(bytes):
-    image = tf.io.decode_image(bytes, channels=3, dtype=tf.float32)
-    return image
 
 @tf.function
 def pad_dataset(images_dataset, patch_size, **kwargs):
@@ -59,3 +59,68 @@ def split_images_into_patches(dataset, patch_size):
     dataset = dataset.flat_map(lambda x: tf.data.Dataset.from_tensor_slices(x))
 
     return dataset, patch_counts
+
+@tf.function
+def get_image_dimensions(image):
+    return tf.shape(image)[:2]
+
+@tf.function
+def resize_with_pad(image, height, width):
+  return tf.clip_by_value(tf.image.resize_with_pad(image, height, width, method='lanczos5'), 0., 1.)
+
+@tf.function
+def add_dimension(image):
+    return tf.expand_dims(image, axis=-1)
+
+@tf.function
+def resize_to_next_divisor(image, divisor):
+    """
+    Resizes an image tensor using tf.image.resize_with_pad so that its dimensions
+    are divisible by a specified divisor.
+
+    Parameters:
+    image (tf.Tensor): A 3-D image tensor of shape [height, width, channels].
+    divisor (int): The divisor number that height and width should be divisible by.
+
+    Returns:
+    tf.Tensor: The resized image tensor.
+    """
+    # Original dimensions
+    original_shape = tf.shape(image)[:2]
+
+    # Calculate the target dimensions
+    target_height = ((original_shape[0] - 1) // divisor + 1) * divisor
+    target_width = ((original_shape[1] - 1) // divisor + 1) * divisor
+
+    # Resize with padding
+    resized_image = tf.image.resize_with_pad(image, target_height, target_width)
+
+    return resized_image, original_shape
+
+@tf.function
+def round_up(value, factor):
+    """Round up the given value to the nearest multiple of the given factor."""
+    return value + (-value % factor)
+
+def round_up_image(image, factor):
+    """
+    Rounds up an image tensor to the nearest multiple of a given factor.
+
+    Parameters:
+    image (tf.Tensor): A 3-D image tensor of shape [height, width, channels].
+    factor (int): The factor to round up to.
+
+    Returns:
+    tf.Tensor: The rounded image tensor.
+    """
+    # Original dimensions
+    original_shape = tf.shape(image)[:2]
+
+    # Calculate the target dimensions
+    target_height = round_up(original_shape[0], factor)
+    target_width = round_up(original_shape[1], factor)
+
+    # Resize with padding
+    resized_image = tf.image.resize_with_pad(image, target_height, target_width)
+
+    return resized_image, original_shape

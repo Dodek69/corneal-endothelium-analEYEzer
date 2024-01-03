@@ -56,12 +56,13 @@ class AnalysisView(APIView):
         
         uploaded_model = request.FILES.get('uploadedModel')
         if uploaded_model != None:
+            logger.debug(f"uploadedModel name is: {uploaded_model.name}")
             model_file_name, model_file_extension = os.path.splitext(uploaded_model.name)
         else:
             model_file_name = None
             model_file_extension = None
         logger.debug(f"uploaded_model: {uploaded_model}")
-        logger.debug(f"uploadedModel name is: {uploaded_model.name}")
+        
         logger.debug(f"uploadedModel extension: {model_file_extension}")
         
         predictionsPath = request.data.get('predictionsPath')
@@ -119,7 +120,7 @@ class AnalysisView(APIView):
         
         logger.debug(f'Creating task to process {len(files)} images')
         try:
-            task = process_image.delay(file_bytes_list, file_paths, mask_bytes_list, predictionsPath, overlayedPath, areaParameter, generateLabelledImages, labelledImagesPath, model, model_file_extension)
+            task = process_image.delay(file_bytes_list, file_paths, mask_bytes_list, predictionsPath, overlayedPath, areaParameter, generateLabelledImages, labelledImagesPath, model, model_file_extension, 'tiling', (512, 512), 32)
         except Exception as e:
             logger.error(f'Error while processing images: {e}')
             return Response(str(e), status=status.HTTP_400_BAD_REQUEST)

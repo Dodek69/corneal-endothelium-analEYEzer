@@ -3,88 +3,48 @@ import tensorflow as tf
 import logging
 import cv2
 from skimage.morphology import skeletonize
-from api.analysis.processing.image_utils import save_image
 
 logger = logging.getLogger(__name__)
-KERNEL_SIZE = (3,3)
 
-def binarize_and_convert(arr, threshold=0.5):
-    # Binarize based on the threshold
-    binarized = tf.where(arr > threshold, 255, 0)
-
-    # convert to uint8
-    binarized = tf.cast(binarized, tf.uint8)
-    
-    return binarized
-
-def overlay_mask_to_pil_image(image, mask, color=(1, 0, 0), alpha=0.01):
-    # Convert the image tensor to a numpy array if it's not already
-    image = image.numpy()
-    
-    logger.debug(f'Checking Type of image: {type(image)}')
-    logger.debug(f'Checking Shape of image: {image.shape}')
-    logger.debug(f'Checking dtype of image: {image.dtype}')
-    
-    logger.debug(f'Checking Type of mask: {type(mask)}')
-    logger.debug(f'Checking Shape of mask: {mask.shape}')
-    logger.debug(f'Checking dtype of mask: {mask.dtype}')
-
-    # Create an RGB version of the mask
-    colored_mask = np.zeros_like(image)
-    colored_mask[:, :, 0] = mask * color[0]  # Red channel
-    colored_mask[:, :, 1] = mask * color[1]  # Green channel
-    colored_mask[:, :, 2] = mask * color[2]  # Blue channel
-
-    # Overlay the mask on the image
-    overlayed_image = np.clip(image * (1 - alpha) + colored_mask * alpha, 0, 1)
-
-    overlayed_image = (overlayed_image * 255).astype(np.uint8)
-
-    return overlayed_image
 
 def overlay_masks(image, reference, prediction, reference_color = (1, 0, 0), prediction_color = (1, 1, 0), overlap_color = (0, 1, 0), alpha=0.6):
     logger.debug(f"Original image shape: {image.shape}")
     logger.debug(f"Reference shape: {reference.shape}")
     logger.debug(f"Prediction shape: {prediction.shape}")
     
-    logger.debug(f"Before expand dims")
-    #reference = tf.expand_dims(reference, -1)
-    prediction = tf.expand_dims(prediction, -1)
-    
-    logger.debug(f" After expand dims")
     # Convert float masks to boolean
     mask1_bool = reference > 0.5
-    mask2_bool = prediction > 0.5
+    mask2_bool = prediction > 0
 
-    logger.debug(f" After bool")
+    #logger.debug(f" After bool")
     # Reshape masks to 3D (x, y, 1)
     mask1_3d = tf.cast(mask1_bool, tf.float32)
     mask2_3d = tf.cast(mask2_bool, tf.float32)
 
-    logger.debug(f" After 3d")
+    #logger.debug(f" After 3d")
     # Apply colors to masks
     mask1_colored = mask1_3d * reference_color
     mask2_colored = mask2_3d * prediction_color
-    logger.debug(f" After colored")
+    #logger.debug(f" After colored")
     # Determine overlapping area and apply overlap color
     overlap_mask = tf.math.logical_and(mask1_bool, mask2_bool)    
 
     #overlap_colored = tf.cast(overlap_mask, tf.float32) * overlap_color
-    logger.debug(f" After overlap")
+    #logger.debug(f" After overlap")
     # Combine masks
     combined_masks = mask1_colored + mask2_colored
-    logger.debug(f" After combine")
+    #logger.debug(f" After combine")
     # Apply overlap color to the overlapping areas
     combined_masks = tf.where(tf.cast(overlap_mask, tf.bool), overlap_color, combined_masks)
-    logger.debug(f" After where")
+    #logger.debug(f" After where")
     combined_mask_area = tf.math.logical_or(mask1_bool, mask2_bool)
-    logger.debug(f" After logical")
+    #logger.debug(f" After logical")
     # Convert to float for blending
     combined_mask_area_float = tf.cast(combined_mask_area, tf.float32)
-    logger.debug(f" After float")
+    #logger.debug(f" After float")
     # Apply the alpha blending only to areas with masks
     overlayed_image = image * (1 - combined_mask_area_float * alpha) + combined_masks * (combined_mask_area_float * alpha)
-    logger.debug(f" After overlay")
+    #logger.debug(f" After overlay")
     return overlayed_image
 
 
@@ -107,17 +67,18 @@ def recombine_patches(predictions, original_shapes, patch_counts, patch_size):
 
         # Rearrange the patches and merge them
         recombined_image = tf.transpose(reshaped_patches, [0, 2, 1, 3, 4])
-        recombined_image = tf.reshape(recombined_image, [num_patches_height * patch_size[0], num_patches_width * patch_size[1]])
-        logger.debug(f'recombined_image after reshape: {type(recombined_image)}')
+        recombined_image = tf.reshape(recombined_image, [num_patches_height * patch_size[0], num_patches_width * patch_size[1], 1])
+        #logger.debug(f'recombined_image type after reshaping: {type(recombined_image)}')
         # crop image to remove padding
         recombined_image = recombined_image[:original_height, :original_width]
-        logger.debug(f'recombined_image after crop: {type(recombined_image)}')
+        #logger.debug(f'recombined_image type after cropping: {type(recombined_image)}')
         # Add to the list of recombined images
         recombined_images.append(recombined_image)
         
     return recombined_images
 
 def close_and_skeletonize(img):
+    KERNEL_SIZE = (3,3)
     closed_img = cv2.morphologyEx(img, cv2.MORPH_CLOSE, np.ones(KERNEL_SIZE, np.uint8))
     
     return skeletonize(closed_img)
@@ -189,7 +150,50 @@ def visualize_labels(original_image, labelled_image, points):
             original_image_8bit[:, :, i]
         )
         
-        
     for point in points:
         cv2.circle(overlayed_image, point, radius=2, color=(0, 255, 0), thickness=-1)  # Green point
     return overlayed_image
+
+
+@tf.function
+def calculate_padding_and_resize(image, resized_height, resized_width, original_height, original_width):
+    # Convert all input dimensions to float for consistency in calculations
+    resized_height = tf.cast(resized_height, tf.float32)
+    resized_width = tf.cast(resized_width, tf.float32)
+    original_height = tf.cast(original_height, tf.float32)
+    original_width = tf.cast(original_width, tf.float32)
+    
+    # Calculate aspect ratios
+    original_aspect_ratio = original_width / original_height
+    resized_aspect_ratio = resized_width / resized_height
+
+    # Initialize padding values as floats
+    pad_h, pad_w = tf.constant(0.0, dtype=tf.float32), tf.constant(0.0, dtype=tf.float32)
+
+    # Calculate padding based on aspect ratios
+    if original_aspect_ratio > resized_aspect_ratio:
+        # Padding was added vertically
+        new_height = resized_width / original_aspect_ratio
+        pad_h = (resized_height - new_height) / 2
+    else:
+        # Padding was added horizontally
+        new_width = resized_height * original_aspect_ratio
+        pad_w = (resized_width - new_width) / 2
+
+    # Convert padding to integer for tf.image.crop_to_bounding_box function
+    pad_h_int = tf.cast(pad_h, tf.int32)
+    pad_w_int = tf.cast(pad_w, tf.int32)
+
+    # Crop out the padding to restore the original aspect ratio
+    cropped_image = tf.image.crop_to_bounding_box(image, pad_h_int, pad_w_int, tf.cast(resized_height - 2 * pad_h, tf.int32), tf.cast(resized_width - 2 * pad_w, tf.int32))
+
+    # Resize the image back to its original dimensions
+    resized_image = tf.image.resize(cropped_image, [original_height, original_width], method='nearest')
+
+    logger.debug(f"binarized_image: {resized_image}")
+    return resized_image
+    
+
+@tf.function
+def remove_dimension(images_dataset):
+    return images_dataset.map(lambda image: tf.squeeze(image, axis=0))
