@@ -83,8 +83,9 @@ class AnalysisService(AbstractService):
         return (base64.b64encode(buffer).decode('utf-8'), str(generate_output_path(base_file_path, relative_file_path)))
     
     @staticmethod
-    def process(input_images, input_images_paths, input_masks, predictions_path, overlayed_path, area_per_pixel, generate_labelled_images, labelled_images_path, model, model_file_extension, pipeline_type, target_dimensions, downsampling_factor):
+    def process(task_id, input_images, input_images_paths, input_masks, predictions_path, overlayed_path, area_per_pixel, generate_labelled_images, labelled_images_path, model, model_file_extension, pipeline_type, target_dimensions, downsampling_factor):
         try:
+            logger.debug(f'task_id: {task_id}')
             logger.debug(f'AnalysisService started for {len(input_images)} images')
             
             if model not in pipelines_registry:
@@ -165,8 +166,14 @@ class AnalysisService(AbstractService):
                     processed_data.append(AnalysisService.zip_encode(labels_visualization_image, file_path, labelled_images_path))
              
             #processed_data.append((metrics.encode('utf-8'), 'metrics.txt'))
+            logger.debug(f'Metrics: {metrics}')
+            
+            for index, (data, filename) in enumerate(processed_data):
+                ordered_filename = f"{task_id}/{index:03d}_{filename}"
+                image_data_bytes = base64.b64decode(data.encode('utf-8'))
+                minio_repo.upload_file_directly(image_data_bytes, ordered_filename)
             logger.debug(f'Finished AnalysisService for {len(input_images)} images')
-            logger.debug(f'Metrics: {metrics}')   
+            
         except Exception as e:
             return None, str(e)
         return processed_data, None

@@ -127,6 +127,36 @@ function UploadPage() {
       setMasks(prevMasks => [...prevMasks, ...Array(newFiles.length).fill(null)]);
   };
 
+  async function pollForResult(endpoint: string, taskId: any, interval: number) {
+    const pollingEndpoint = endpoint;
+  
+    let completed = false;
+    while (!completed) {
+      try {
+        const response = await fetch(pollingEndpoint);
+  
+        if (response.ok) {
+          const data = await response.json();
+          if (data.status === 'completed') {
+            // Task is completed, handle the data
+            setImageData(data.results); // Assuming the data contains the results
+            completed = true;  // Stop polling
+          } else {
+            // Task is not completed, wait for the suggested interval and then poll again
+            await new Promise(resolve => setTimeout(resolve, interval * 1000));
+          }
+        } else {
+          setMessage('Failed to get task status');
+          completed = true; // Stop polling on error
+        }
+      } catch (error) {
+        console.error('Polling failed', error);
+        setMessage('Failed to get task status');
+        completed = true; // Stop polling on error
+      }
+    }
+  }
+
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (files.length === 0) {
@@ -169,14 +199,20 @@ function UploadPage() {
       });
 
       if (response.ok) {
-        const data = await response.json();
-        setImageData(data);
+        const initialData = await response.json();
+  
+        // Start polling if task has started successfully
+        if (initialData.status === 'started') {
+          pollForResult(initialData.polling_endpoint, initialData.task_id, initialData.polling_interval);
+        } else {
+          setMessage('Task did not start successfully');
+        }
       } else {
-        setMessage('Failed to upload file(s)');
+        setMessage('Failed to start task');
       }
     } catch (error) {
-      console.error('Upload failed', error);
-      setMessage('Failed to upload file(s)');
+      console.error('Task start failed', error);
+      setMessage('Failed to start task');
     }
   };
   const handleDeleteFloatingFilesChange = () => {

@@ -2,6 +2,7 @@ from django.urls import include, path
 from rest_framework import routers
 from api.user_management.views import UserViewSet, GroupViewSet
 from api.analysis.views import AnalysisView
+from api.analysis.views import TaskStatusView
 
 router = routers.DefaultRouter()
 router.register(r'users', UserViewSet)
@@ -11,4 +12,5 @@ urlpatterns = [
     path('', include(router.urls)),
     path('api-auth/', include('rest_framework.urls', namespace='rest_framework')),
     path('analysis/', AnalysisView.as_view()),
+    path('task-status/<str:task_id>/', TaskStatusView.as_view(), name='task-status'),
 ]

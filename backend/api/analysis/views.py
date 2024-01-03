@@ -1,4 +1,3 @@
-from api.analysis.model_wrappers.tensorflow_model_wrapper import TensorFlowModelWrapper
 from rest_framework.views import APIView
 from rest_framework.parsers import MultiPartParser
 import logging
@@ -13,6 +12,7 @@ import os
 import tempfile
 import uuid
 from api.analysis.repositories.minio_repository import MinioRepository
+import base64
 
 def generate_object_name(filename):
     unique_id = uuid.uuid4()
@@ -118,32 +118,80 @@ class AnalysisView(APIView):
         mask_bytes_list = [mask.read() if mask else None for mask in masks]
         logger.debug(f'Length of mask_bytes_list: {len(mask_bytes_list)}')
         
+        
+
+        
         logger.debug(f'Creating task to process {len(files)} images')
         try:
             task = process_image.delay(file_bytes_list, file_paths, mask_bytes_list, predictionsPath, overlayedPath, areaParameter, generateLabelledImages, labelledImagesPath, model, model_file_extension, 'tiling', (512, 512), 32)
         except Exception as e:
-            logger.error(f'Error while processing images: {e}')
+            logger.error(f'Error while starting task: {str(e)}')
             return Response(str(e), status=status.HTTP_400_BAD_REQUEST)
         
-        processed_data, error = task.get()
-        if error:
-            logger.error(f'Error while processing images: {error}')
-            return Response(error, status=status.HTTP_400_BAD_REQUEST)
+        #return Response(error, status=status.HTTP_400_BAD_REQUEST)
+        logger.debug(f"task id: {task.id}")
+        response_data = {
+            "task_id": task.id,
+            "status": "started",
+            "polling_endpoint": f"http://localhost:8000/task-status/{task.id}/",
+            "polling_interval": 5
+        }
+
+        return Response(response_data)
         
-        logger.debug(f'Task returned {len(processed_data)} images')
-        
-        json_response_data = [
-            {
-                'filename': filename,
-                'data': data  # data is already in bytes
-            } 
-            for data, filename in processed_data
-        ]
-        
-        return JsonResponse(json_response_data, safe=False)
-    
     def get(self, request, format=None):
         model_names = list(pipelines_registry.keys())
         logger.debug(f"model names: {model_names}")
         return Response(model_names)
     
+results = {}
+from api.celery import app
+
+
+def get_task_result(task_id):
+    result = app.AsyncResult(task_id)
+    return result
+
+# In your views.py
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
+
+class TaskStatusView(APIView):
+    def get(self, request, task_id):
+        task_status = get_task_result(task_id)
+        if not task_status.ready():
+            return Response({"task_id": task_id, "status": "no ready"})
+        
+        result = task_status.result
+        state = task_status.state
+        
+        if state == 'SUCCESS':
+            try:
+        
+                files = minio_repo.list_files()
+                task_files = [f for f in files if f.startswith(f"{task_id}/")]
+                task_files.sort()  # Sorting to maintain order
+
+                results = []
+                for file_name in task_files:
+                    response = minio_repo.s3_client.get_object(Bucket=minio_repo.bucket_name, Key=file_name)
+                    file_content = response['Body'].read()
+                    encoded_data = base64.b64encode(file_content).decode('utf-8')
+                    
+                    results.append({
+                        'filename': file_name.split('/')[-1],  # Just the filename
+                        'data': encoded_data  # Base64 encoded data
+                    })
+                    
+                return JsonResponse({'status': 'completed', 'results': results})
+            except Exception as e:
+                # Handle errors and exceptions
+                return Response({"error": "Failed to retrieve results"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        elif state == 'FAILURE':
+            # Return current status if task is still ongoing
+            return Response({"task_id": task_id, "status": state})
+        elif state == 'REVOKED':
+            return Response({"task_id": task_id, "status": state})
+        else:
+            return Response({"error": "error"}, status=status.HTTP_404_NOT_FOUND)
