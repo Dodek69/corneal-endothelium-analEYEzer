@@ -174,6 +174,31 @@ class AnalysisService(AbstractService):
                 minio_repo.upload_file_directly(image_data_bytes, ordered_filename)
             logger.debug(f'Finished AnalysisService for {len(input_images)} images')
             
+            logger.debug(f'Metrics: {metrics}')
+            retries = 0
+            while retries < 5:
+                logger.debug(f'iteration {retries}')
+                for index, (data, filename) in enumerate(processed_data):
+                    logger.debug(f'generating ordered filename...')
+                    ordered_filename = f"{task_id}\{index:03d}\{filename}"
+                    logger.debug(f'decoding data...')
+                    image_data_bytes = base64.b64decode(data.encode('utf-8'))
+                    logger.debug(f'uploading file...')
+                    minio_repo.upload_file_directly(image_data_bytes, ordered_filename)
+                logger.debug(f'listing files...')
+                files = minio_repo.list_files()
+                task_files = [f for f in files if f.startswith(f"{task_id}\\")]
+                if len(task_files) == len(processed_data):
+                    logger.debug(f"upload successful after {retries} retries")
+                    break
+                else:
+                    logger.debug(f"retrying upload...")
+                   
+                retries += 1
+            else:
+                logger.debug(f"upload failed after {retries} retries")
+                return None, "upload failed"
+            
         except Exception as e:
             return None, str(e)
         return processed_data, None

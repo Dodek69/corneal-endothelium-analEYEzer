@@ -122,27 +122,19 @@ class AnalysisView(APIView):
         logger.debug(f'Length of mask_bytes_list: {len(mask_bytes_list)}')
         
         
-
-        
         logger.debug(f'Creating task to process {len(files)} images')
         try:
             task = process_image.delay(file_bytes_list, file_paths, mask_bytes_list, predictionsPath, overlayedPath, areaParameter, generateLabelledImages, labelledImagesPath, model, model_file_extension, 'tiling', (512, 512), 32)
         except Exception as e:
             logger.error(f'Error while starting task: {str(e)}')
             return Response(str(e), status=status.HTTP_400_BAD_REQUEST)
-        user_id = request.user.id
-        logger.debug(f'started task id: {task.id}')
-        logger.debug(f'user id: {user_id}')
-        try:
-            signed_task_id = signing.dumps(f"{task.id}:{user_id}")
-        except Exception as e:
-            logger.error(f'Error while signing task ID: {str(e)}')
-            return JsonResponse(get_error_jsend_response('internal server error', 5), status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
+        
+        #return Response(error, status=status.HTTP_400_BAD_REQUEST)
+        logger.debug(f"task id: {task.id}")
         response_data = {
-            "task_id": signed_task_id,
+            "task_id": task.id,
             "status": "started",
-            "polling_endpoint": f"http://localhost:8000/task-status/{signed_task_id}",
+            "polling_endpoint": f"http://localhost:8000/task-status/{task.id}/",
             "polling_interval": 5
         }
 
@@ -170,35 +162,23 @@ from rest_framework.response import Response
 from rest_framework import status
 
 class TaskStatusView(APIView):
-    def get(self, request, signed_task_id):
-        try:
-            # Attempt to load the original values from the signed ID
-            original_value = signing.loads(signed_task_id)
-            task_id, original_user_id = original_value.split(':')
-            
-            logger.debug(f"task_id: {task_id}")
-            logger.debug(f"original_user_id: {original_user_id}")
-        except signing.BadSignature:
-            return JsonResponse({'status': 'error'}, status=status.HTTP_400_BAD_REQUEST)
-
-        # Check if the current user is the one who started the task
-        if str(request.user.id) != original_user_id:
-            logger.debug(f"forbidden user")
-            return JsonResponse({'status': 'error', 'error': "You do not have permission to view this task's results"}, status=status.HTTP_403_FORBIDDEN)
-
+    def get(self, request, task_id):
         task_status = get_task_result(task_id)
         if not task_status.ready():
+            logger.debug(f"task not ready, status is: {task_status.state}")
             return Response({"task_id": task_id, "status": "no ready"})
         
         result = task_status.result
         state = task_status.state
-        
+        logger.debug(f"task ready, status is: {state}")
         if state == 'SUCCESS':
             try:
         
                 files = minio_repo.list_files()
-                task_files = [f for f in files if f.startswith(f"{task_id}/")]
+                task_files = [f for f in files if f.startswith(f"{task_id}\\")]
                 task_files.sort()  # Sorting to maintain order
+                
+                logger.debug(f"task_files: {task_files}")
 
                 results = []
                 for file_name in task_files:
@@ -207,9 +187,14 @@ class TaskStatusView(APIView):
                     encoded_data = base64.b64encode(file_content).decode('utf-8')
                     
                     results.append({
-                        'filename': file_name.split('/')[-1],  # Just the filename
+                        'filename': file_name.split('\\')[-1],  # Just the filename
                         'data': encoded_data  # Base64 encoded data
                     })
+                    logger.debug(f"file_name: {file_name}")
+                    logger.debug(file_name.split('\\')[-1])
+                    
+                    
+                logger.debug(f"len of results: {len(results)}")
                     
                 return JsonResponse({'status': 'completed', 'results': results})
             except Exception as e:

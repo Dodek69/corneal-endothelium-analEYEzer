@@ -13,6 +13,6 @@ urlpatterns = [
     path('', include(router.urls)),
     path('api-auth/', include('rest_framework.urls', namespace='rest_framework')),
     path('analysis/', AnalysisView.as_view()),
-    path('task-status/<str:signed_task_id>/', TaskStatusView.as_view(), name='task-status'),
+    path('task-status/<str:task_id>/', TaskStatusView.as_view(), name='task-status'),
     path('analysis/models', ModelsView.as_view()),
 ]
