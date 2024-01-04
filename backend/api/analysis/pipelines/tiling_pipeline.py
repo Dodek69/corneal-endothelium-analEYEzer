@@ -6,7 +6,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 class TilingPipeline(BaseProcessingPipeline):
-    DEFAULT_BATCH_SIZE = 64
+    DEFAULT_BATCH_SIZE = 32
     def __init__(self, model, patch_size, batch_size=DEFAULT_BATCH_SIZE):
         if len(patch_size) != 3 or not all(isinstance(dim, int) and dim > 0 for dim in patch_size):
             raise ValueError("patch_size must be a tuple of three positive integers")

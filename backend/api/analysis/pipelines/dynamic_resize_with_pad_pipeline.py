@@ -6,7 +6,7 @@ import tensorflow as tf
 logger = logging.getLogger(__name__)
 
 class DynamicResizeWithPadPipeline(BaseProcessingPipeline):
-    DEFAULT_BATCH_SIZE = 64
+    DEFAULT_BATCH_SIZE = 32
     def __init__(self, model, downsampling_factor, batch_size=DEFAULT_BATCH_SIZE):
         if downsampling_factor < 1 or not isinstance(downsampling_factor, int):
             raise ValueError("downsampling_factor must be a positive integer")

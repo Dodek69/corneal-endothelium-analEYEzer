@@ -6,7 +6,7 @@ from api.analysis.processing.postprocessing import calculate_padding_and_resize
 logger = logging.getLogger(__name__)
 
 class ResizeWithPadPipeline(BaseProcessingPipeline):
-    DEFAULT_BATCH_SIZE = 64
+    DEFAULT_BATCH_SIZE = 32
     def __init__(self, model, target_dimensions, batch_size=DEFAULT_BATCH_SIZE):
         if len(target_dimensions) != 2 or not all(isinstance(dim, int) and dim > 0 for dim in target_dimensions):
             raise ValueError("target_dimensions must be a tuple of two positive integers")
