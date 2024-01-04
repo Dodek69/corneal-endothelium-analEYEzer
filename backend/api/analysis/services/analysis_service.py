@@ -197,8 +197,9 @@ class AnalysisService(AbstractService):
                 retries += 1
             else:
                 logger.debug(f"upload failed after {retries} retries")
-                return None, "upload failed"
+                return processed_data, None
             
         except Exception as e:
             return None, str(e)
-        return processed_data, None
+        
+        return None, None

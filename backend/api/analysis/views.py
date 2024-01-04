@@ -129,12 +129,23 @@ class AnalysisView(APIView):
             logger.error(f'Error while starting task: {str(e)}')
             return Response(str(e), status=status.HTTP_400_BAD_REQUEST)
         
+        
+        user_id = request.user.id
+        logger.debug(f'started task id: {task.id}')
+        logger.debug(f'type of started task id: {type(task.id)}')
+        logger.debug(f'user id: {user_id}')
+        logger.debug(f'type of user id: {type(user_id)}')
+        try:
+            signed_task_id = signing.dumps(f"{task.id}:{user_id}")
+        except Exception as e:
+            logger.error(f'Error while signing task ID: {str(e)}')
+        
         #return Response(error, status=status.HTTP_400_BAD_REQUEST)
-        logger.debug(f"task id: {task.id}")
+        logger.debug(f"task id: {signed_task_id}")
         response_data = {
-            "task_id": task.id,
+            "task_id": signed_task_id,
             "status": "started",
-            "polling_endpoint": f"http://localhost:8000/task-status/{task.id}/",
+            "polling_endpoint": f"http://localhost:8000/task-status/{signed_task_id}/",
             "polling_interval": 5
         }
 
@@ -163,40 +174,87 @@ from rest_framework import status
 
 class TaskStatusView(APIView):
     def get(self, request, task_id):
+        try:
+            # Attempt to load the original values from the signed ID
+            original_value = signing.loads(task_id)
+            task_id, original_user_id = original_value.split(':')
+
+            logger.debug(f"task_id: {task_id}")
+            logger.debug(f"original_user_id: {original_user_id}")
+        except signing.BadSignature:
+            return JsonResponse({'status': 'error'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        logger.debug(f"task_id: {task_id}")
+        logger.debug(f"type of task_id: {type(task_id)}")
+        logger.debug(f"original_user_id: {original_user_id}")
+        logger.debug(f"type of original_user_id: {type(original_user_id)}")
+        
         task_status = get_task_result(task_id)
+        result = task_status.result
+        state = task_status.state
+        logger.debug(f"task state: {state}")
+        if result:
+            logger.debug(f"task result exist")
+        else:
+            logger.debug(f"task result does not exist")
+            logger.debug(f"task result {result}")
+            
         if not task_status.ready():
             logger.debug(f"task not ready, status is: {task_status.state}")
             return Response({"task_id": task_id, "status": "no ready"})
         
-        result = task_status.result
-        state = task_status.state
         logger.debug(f"task ready, status is: {state}")
         if state == 'SUCCESS':
             try:
-        
                 files = minio_repo.list_files()
                 task_files = [f for f in files if f.startswith(f"{task_id}\\")]
-                task_files.sort()  # Sorting to maintain order
                 
                 logger.debug(f"task_files: {task_files}")
-
-                results = []
-                for file_name in task_files:
-                    response = minio_repo.s3_client.get_object(Bucket=minio_repo.bucket_name, Key=file_name)
-                    file_content = response['Body'].read()
-                    encoded_data = base64.b64encode(file_content).decode('utf-8')
+                
+                logger.debug(f"found {len(task_files)} task_files")
+                
+                if len(task_files) == 0:
+                    logger.debug(f"getting result from task_status.result")
+                    processed_data, error = result
+                    if not processed_data:
+                        logger.debug(f"processed_data does not exist")
+                        return Response({"error": "error"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
                     
-                    results.append({
-                        'filename': file_name.split('\\')[-1],  # Just the filename
-                        'data': encoded_data  # Base64 encoded data
-                    })
-                    logger.debug(f"file_name: {file_name}")
-                    logger.debug(file_name.split('\\')[-1])
+                    logger.debug(f"processed_data exist")
+                    if error:
+                        logger.debug(f"error exist")
+                        return Response({"error": "error"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
                     
+                    logger.debug(f"error not exist")
+                    results = [
+                    {
+                        'filename': filename,
+                        'data': data
+                    } 
                     
-                logger.debug(f"len of results: {len(results)}")
+                    for data, filename in processed_data]
                     
-                return JsonResponse({'status': 'completed', 'results': results})
+                else:
+                    task_files.sort()  # Sorting to maintain order
+                    
+                    results = []
+                    for file_name in task_files:
+                        response = minio_repo.s3_client.get_object(Bucket=minio_repo.bucket_name, Key=file_name)
+                        file_content = response['Body'].read()
+                        encoded_data = base64.b64encode(file_content).decode('utf-8')
+                        
+                        results.append({
+                            'filename': file_name.split('\\')[-1],  # Just the filename
+                            'data': encoded_data  # Base64 encoded data
+                        })
+                        logger.debug(f"file_name: {file_name}")
+                        logger.debug(file_name.split('\\')[-1])
+                        
+                if len(results) != 0:
+                    return JsonResponse({'status': 'completed', 'results': results})
+                else:
+                    logger.error(f"results length is 0")
+                    return JsonResponse({'status': 'error'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
             except Exception as e:
                 # Handle errors and exceptions
                 return Response({"error": "Failed to retrieve results"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
