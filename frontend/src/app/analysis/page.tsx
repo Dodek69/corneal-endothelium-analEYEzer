@@ -51,7 +51,7 @@ function UploadPage() {
 
   const fetchModels = async () => {
     try {
-        const response = await fetch('http://localhost:8000/analysis/');
+        const response = await fetch('http://localhost:8000/analysis/models');
         const data = await response.json();
         setModels(data);
     } catch (error) {
@@ -131,10 +131,18 @@ function UploadPage() {
 
   async function pollForResult(endpoint: string, taskId: any, interval: number) {
     const pollingEndpoint = endpoint;
+
+    
   
     let completed = false;
     while (!completed) {
       try {
+        const response = await fetch(pollingEndpoint, {
+          method: 'GET',
+          headers: {
+            'Accept': 'application/json; indent=4',
+            'Authorization': 'Basic ' + btoa(login + ':' + password),
+          }});
   
         if (response.ok) {
           const data = await response.json();
@@ -145,11 +153,6 @@ function UploadPage() {
           } else {
             // Task is not completed, wait for the suggested interval and then poll again
             await new Promise(resolve => setTimeout(resolve, interval * 1000));
-        const response = await fetch(pollingEndpoint, {
-          method: 'GET',
-          headers: {
-            'Accept': 'application/json; indent=4',
-            'Authorization': 'Basic ' + btoa(login + ':' + password),
           }
         } else {
           setMessage('Failed to get task status');

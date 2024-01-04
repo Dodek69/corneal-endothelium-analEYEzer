@@ -130,23 +130,32 @@ class AnalysisView(APIView):
         except Exception as e:
             logger.error(f'Error while starting task: {str(e)}')
             return Response(str(e), status=status.HTTP_400_BAD_REQUEST)
-        
-        #return Response(error, status=status.HTTP_400_BAD_REQUEST)
-        logger.debug(f"task id: {task.id}")
+        user_id = request.user.id
+        logger.debug(f'started task id: {task.id}')
+        logger.debug(f'user id: {user_id}')
+        try:
+            signed_task_id = signing.dumps(f"{task.id}:{user_id}")
+        except Exception as e:
+            logger.error(f'Error while signing task ID: {str(e)}')
+            return JsonResponse(get_error_jsend_response('internal server error', 5), status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
         response_data = {
-            "task_id": task.id,
+            "task_id": signed_task_id,
             "status": "started",
-            "polling_endpoint": f"http://localhost:8000/task-status/{task.id}/",
+            "polling_endpoint": f"http://localhost:8000/task-status/{signed_task_id}",
             "polling_interval": 5
         }
 
         return Response(response_data)
         
+    
+class ModelsView(APIView):
+    permission_classes = [AllowAny]
     def get(self, request, format=None):
         model_names = list(pipelines_registry.keys())
         logger.debug(f"model names: {model_names}")
         return Response(model_names)
-    
+
 results = {}
 from api.celery import app
 
@@ -170,7 +179,7 @@ class TaskStatusView(APIView):
             logger.debug(f"task_id: {task_id}")
             logger.debug(f"original_user_id: {original_user_id}")
         except signing.BadSignature:
-            return JsonResponse(get_error_jsend_response('Invalid task ID', 1), status=status.HTTP_400_BAD_REQUEST)
+            return JsonResponse({'status': 'error'}, status=status.HTTP_400_BAD_REQUEST)
 
         # Check if the current user is the one who started the task
         if str(request.user.id) != original_user_id:
