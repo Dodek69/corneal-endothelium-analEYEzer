@@ -31,6 +31,8 @@ function UploadPage() {
 
   const [models, setModels] = useState([]);
   const [selectedModel, setSelectedModel] = useState('');
+  const [login, setLogin] = useState('domicio088');
+  const [password, setPassword] = useState('');
 
   const handleImageSelect = (index: number, isSelected: boolean) => {
       const newSelection = new Set(selectedImages);
@@ -133,7 +135,6 @@ function UploadPage() {
     let completed = false;
     while (!completed) {
       try {
-        const response = await fetch(pollingEndpoint);
   
         if (response.ok) {
           const data = await response.json();
@@ -144,6 +145,11 @@ function UploadPage() {
           } else {
             // Task is not completed, wait for the suggested interval and then poll again
             await new Promise(resolve => setTimeout(resolve, interval * 1000));
+        const response = await fetch(pollingEndpoint, {
+          method: 'GET',
+          headers: {
+            'Accept': 'application/json; indent=4',
+            'Authorization': 'Basic ' + btoa(login + ':' + password),
           }
         } else {
           setMessage('Failed to get task status');
@@ -194,6 +200,10 @@ function UploadPage() {
     formData.append('labelledImagesPath', labelledImagesPath);
     try {
       const response = await fetch('http://localhost:8000/analysis/', {
+        headers: {
+          'Accept': 'application/json; indent=4',
+          'Authorization': 'Basic ' + btoa(login + ':' + password),
+        },
         method: 'POST',
         body: formData,
       });
@@ -349,6 +359,25 @@ const handleModelFiles = async (files: (UppyFile)[]) => {
   return (
     <div>
       <form onSubmit={handleSubmit}>
+      <div>
+        {/*add login and password inputs*/}
+        <label>Login:</label>
+        <input 
+          type="text" 
+          value={login} 
+          onChange={(e) => setLogin(e.target.value)} 
+          style={{ color: 'black' }}
+        />
+        <label>Password:</label>
+        <input 
+          type="password" 
+          value={password} 
+          onChange={(e) => setPassword(e.target.value)} 
+          style={{ color: 'black' }}
+        />
+
+
+      </div>
         <div>
           <DragAndDropNoSSR onFileChange={handleFileChange} />
         </div>

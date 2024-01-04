@@ -13,6 +13,9 @@ import tempfile
 import uuid
 from api.analysis.repositories.minio_repository import MinioRepository
 import base64
+from django.core import signing
+from api.celery import app
+from rest_framework.permissions import AllowAny
 
 def generate_object_name(filename):
     unique_id = uuid.uuid4()
@@ -158,7 +161,22 @@ from rest_framework.response import Response
 from rest_framework import status
 
 class TaskStatusView(APIView):
-    def get(self, request, task_id):
+    def get(self, request, signed_task_id):
+        try:
+            # Attempt to load the original values from the signed ID
+            original_value = signing.loads(signed_task_id)
+            task_id, original_user_id = original_value.split(':')
+            
+            logger.debug(f"task_id: {task_id}")
+            logger.debug(f"original_user_id: {original_user_id}")
+        except signing.BadSignature:
+            return JsonResponse(get_error_jsend_response('Invalid task ID', 1), status=status.HTTP_400_BAD_REQUEST)
+
+        # Check if the current user is the one who started the task
+        if str(request.user.id) != original_user_id:
+            logger.debug(f"forbidden user")
+            return JsonResponse({'status': 'error', 'error': "You do not have permission to view this task's results"}, status=status.HTTP_403_FORBIDDEN)
+
         task_status = get_task_result(task_id)
         if not task_status.ready():
             return Response({"task_id": task_id, "status": "no ready"})
