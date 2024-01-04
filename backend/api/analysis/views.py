@@ -16,6 +16,7 @@ import base64
 from django.core import signing
 from api.celery import app
 from rest_framework.permissions import AllowAny
+from api.celery import app
 
 def generate_object_name(filename):
     unique_id = uuid.uuid4()
@@ -159,29 +160,14 @@ class ModelsView(APIView):
         logger.debug(f"model names: {model_names}")
         return Response(model_names)
 
-results = {}
-from api.celery import app
-
-
-def get_task_result(task_id):
-    result = app.AsyncResult(task_id)
-    return result
-
-# In your views.py
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework import status
-
 class TaskStatusView(APIView):
     def get(self, request, task_id):
         try:
             # Attempt to load the original values from the signed ID
             original_value = signing.loads(task_id)
             task_id, original_user_id = original_value.split(':')
-
-            logger.debug(f"task_id: {task_id}")
-            logger.debug(f"original_user_id: {original_user_id}")
         except signing.BadSignature:
+            logger.debug(f"bad signature")
             return JsonResponse({'status': 'error'}, status=status.HTTP_400_BAD_REQUEST)
         
         logger.debug(f"task_id: {task_id}")
@@ -189,43 +175,77 @@ class TaskStatusView(APIView):
         logger.debug(f"original_user_id: {original_user_id}")
         logger.debug(f"type of original_user_id: {type(original_user_id)}")
         
-        task_status = get_task_result(task_id)
-        result = task_status.result
+        try:
+            original_user_id = int(original_user_id)
+        except ValueError:
+             logger.debug("original_user_id is not an integer")
+             return JsonResponse({'status': 'error'}, status=status.HTTP_400_BAD_REQUEST)
+         
+        if request.user.id != original_user_id:
+            logger.debug(f"user id does not match original user id")
+            return JsonResponse({'status': 'error'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        task_status = app.AsyncResult(task_id)
+        
         state = task_status.state
         logger.debug(f"task state: {state}")
+        
+        result = task_status.result
         if result:
+            #might be [None, None], [None, error], [[data, filename], None], [[data, filename], None]
             logger.debug(f"task result exist")
         else:
+            # is None
             logger.debug(f"task result does not exist")
             logger.debug(f"task result {result}")
-            
-        if not task_status.ready():
-            logger.debug(f"task not ready, status is: {task_status.state}")
-            return Response({"task_id": task_id, "status": "no ready"})
         
-        logger.debug(f"task ready, status is: {state}")
         if state == 'SUCCESS':
-            try:
-                files = minio_repo.list_files()
-                task_files = [f for f in files if f.startswith(f"{task_id}\\")]
-                
-                logger.debug(f"task_files: {task_files}")
-                
-                logger.debug(f"found {len(task_files)} task_files")
-                
-                if len(task_files) == 0:
+            if result and result[0] == None and result[1] == None:
+                try:
+                    files = minio_repo.list_files()
+                    task_files = [f for f in files if f.startswith(f"{task_id}\\")]
+                    
+                    logger.debug(f"found {len(task_files)} task_files")
+                    logger.debug(f"task_files: {task_files}")
+                        
+                    task_files.sort()  # Sorting to maintain order
+            
+                    results = []
+                    for file_name in task_files:
+                        logger.debug(f"Downloading {file_name}...")
+                        response = minio_repo.s3_client.get_object(Bucket=minio_repo.bucket_name, Key=file_name)
+                        file_content = response['Body'].read()
+                        encoded_data = base64.b64encode(file_content).decode('utf-8')
+                        results.append({
+                            'filename': file_name.split('\\')[-1],  # Just the filename
+                            'data': encoded_data  # Base64 encoded data
+                        })
+                        
+                        logger.debug(file_name.split('\\')[-1])
+                            
+                    if len(results) != len(task_files):
+                        logger.error(f"results length does not match task_files length")
+                        return JsonResponse({'status': 'error'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                except Exception as e:
+                    logger.error(f"Error while getting result from minio: {str(e)}")
+                    return Response({"error": "error"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            else:
+                try:
                     logger.debug(f"getting result from task_status.result")
                     processed_data, error = result
+                    
+                    if error:
+                        logger.debug(f"recieved error from task_status.result")
+                        return Response({"error": "error while processing images"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                    
+                    logger.debug(f"error not exist")
+                    
                     if not processed_data:
-                        logger.debug(f"processed_data does not exist")
+                        logger.debug(f"both processed_data and error does not exist")
                         return Response({"error": "error"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
                     
                     logger.debug(f"processed_data exist")
-                    if error:
-                        logger.debug(f"error exist")
-                        return Response({"error": "error"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
                     
-                    logger.debug(f"error not exist")
                     results = [
                     {
                         'filename': filename,
@@ -233,35 +253,28 @@ class TaskStatusView(APIView):
                     } 
                     
                     for data, filename in processed_data]
-                    
-                else:
-                    task_files.sort()  # Sorting to maintain order
-                    
-                    results = []
-                    for file_name in task_files:
-                        response = minio_repo.s3_client.get_object(Bucket=minio_repo.bucket_name, Key=file_name)
-                        file_content = response['Body'].read()
-                        encoded_data = base64.b64encode(file_content).decode('utf-8')
-                        
-                        results.append({
-                            'filename': file_name.split('\\')[-1],  # Just the filename
-                            'data': encoded_data  # Base64 encoded data
-                        })
-                        logger.debug(f"file_name: {file_name}")
-                        logger.debug(file_name.split('\\')[-1])
-                        
-                if len(results) != 0:
-                    return JsonResponse({'status': 'completed', 'results': results})
-                else:
-                    logger.error(f"results length is 0")
-                    return JsonResponse({'status': 'error'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-            except Exception as e:
-                # Handle errors and exceptions
-                return Response({"error": "Failed to retrieve results"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        elif state == 'FAILURE':
-            # Return current status if task is still ongoing
+                except Exception as e:
+                    logger.error(f"Error while getting result from task_status.result: {str(e)}")
+                    return Response({"error": "error"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return JsonResponse({'status': 'completed', 'results': results})
+        
+        elif state == 'PENDING':
+            logger.debug(f"task state is pending")
             return Response({"task_id": task_id, "status": state})
+        elif state == 'FAILURE':
+            logger.debug(f"task state is failure")
+            return Response({"task_id": task_id, "status": state}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         elif state == 'REVOKED':
+            logger.debug(f"task state is revoked")
+            return Response({"task_id": task_id, "status": state}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        elif state == 'STARTED':
+            logger.debug(f"task state is started")
+            return Response({"task_id": task_id, "status": state})
+        elif state == 'RETRY':
+            logger.debug(f"task state is retry")
+            return Response({"task_id": task_id, "status": state})
+        elif state == 'RECEIVED':
+            logger.debug(f"task state is received")
             return Response({"task_id": task_id, "status": state})
         else:
-            return Response({"error": "error"}, status=status.HTTP_404_NOT_FOUND)
+            return Response({"error": "error"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
