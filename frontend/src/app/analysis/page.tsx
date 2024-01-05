@@ -34,6 +34,8 @@ function UploadPage() {
   const [login, setLogin] = useState('domicio088');
   const [password, setPassword] = useState('');
 
+  const [metrics, setMetrics] = useState<{num_labels: number, area: number, cell_density: number, std_areas: number, mean_areas: number, coefficient_value: number, num_hexagonal: number, hexagonal_cell_ratio: number}[]>([]);
+
   const handleImageSelect = (index: number, isSelected: boolean) => {
       const newSelection = new Set(selectedImages);
       if (isSelected) {
@@ -148,7 +150,11 @@ function UploadPage() {
           const data = await response.json();
           if (data.status === 'completed') {
             // Task is completed, handle the data
+            console.log('data.metrics length:', data.metrics.length);
+            console.log('data.results length:', data.results.length);
+            setMetrics(data.metrics);
             setImageData(data.results); // Assuming the data contains the results
+            console.log("data.metrics:", data.metrics);
             completed = true;  // Stop polling
           } else {
             // Task is not completed, wait for the suggested interval and then poll again
@@ -494,16 +500,40 @@ const handleModelFiles = async (files: (UppyFile)[]) => {
         <button onClick={downloadSelectedImages}>Download Selected Images</button>
       </div>
       <div>
-        {imageData.map((image, index) => (
-            <div key={index}>
-                <img src={`data:image/png;base64,${image.data}`} alt={image.filename} />
-                <input
-                    type="checkbox"
-                    checked={selectedImages.has(index)}
-                    onChange={(e) => handleImageSelect(index, e.target.checked)}
-                />
-            </div>
-        ))}
+      {imageData.map((image, index) => {
+    // This calculation finds the corresponding metrics index
+    // for every group of 3 images.
+    const apiDataIndex = Math.floor(index / 3);
+
+    return (
+        <div key={index}>
+
+            {/* Render metrics info once every 3 images */}
+            {index % 3 === 0 && (
+                <div>
+                    <p>Num Labels: {metrics[apiDataIndex]?.num_labels}</p>
+                    <p>Area: {metrics[apiDataIndex]?.area}</p>
+                    <p>Cell Density: {metrics[apiDataIndex]?.cell_density}</p>
+                    <p>Std Areas: {metrics[apiDataIndex]?.std_areas}</p>
+                    <p>Mean Areas: {metrics[apiDataIndex]?.mean_areas}</p>
+                    <p>Coefficient Value: {metrics[apiDataIndex]?.coefficient_value}</p>
+                    <p>Num Hexagonal: {metrics[apiDataIndex]?.num_hexagonal}</p>
+                    <p>Hexagonal Cell Ratio: {metrics[apiDataIndex]?.hexagonal_cell_ratio}</p>
+                </div>
+            )}
+
+            {/* Displaying Image */}
+            <img src={`data:image/png;base64,${image.data}`} alt={`Image ${index}`} />
+            
+            {/* Checkbox for selection */}
+            <input
+                type="checkbox"
+                checked={selectedImages.has(index)}
+                onChange={(e) => handleImageSelect(index, e.target.checked)}
+            />
+        </div>
+    );
+})}
       </div>
     </div>
   );

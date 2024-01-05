@@ -83,13 +83,41 @@ def close_and_skeletonize(img):
     
     return skeletonize(closed_img)
 
-def calculate_metrics(skeleton_inverted, area_in_mm):
+def calculate_metrics(skeleton_inverted, area_per_pixel):
     num_labels, labelled_image, stats, _ = cv2.connectedComponentsWithStats(skeleton_inverted, 8, cv2.CV_32S, connectivity=4)
-    areas = stats[:, cv2.CC_STAT_AREA]
+    num_labels = num_labels - 1             # Ignore background label
+    areas = stats[1:, cv2.CC_STAT_AREA]     # Ignore background label
+    
+    #logger.debug(f"sum(areas): {np.sum(areas)}")
+    #logger.debug(f"max(areas): {np.max(areas)}")
     
     feature_counts, three_label_meetings = find_label_meetings(labelled_image, num_labels)
     num_hexagonal = np.count_nonzero(feature_counts == 6)
-    return num_labels/area_in_mm, np.std(areas)/np.mean(areas), num_hexagonal/num_labels, feature_counts, three_label_meetings, num_labels, labelled_image
+    #logger.debug(f"num_hexagonal: {num_hexagonal}")
+    
+    #logger.debug(f"num_labels: {num_labels}")
+    size = skeleton_inverted.size
+    #logger.debug(f"size: {size}")
+    
+    area = size * area_per_pixel
+    #logger.debug(f"area: {area}")
+    
+    cell_density = num_labels/area
+    #logger.debug(f"cell_density: {cell_density}")
+    
+    std_areas = np.std(areas)
+    #logger.debug(f"std_areas: {std_areas}")
+    
+    mean_areas = np.mean(areas)
+    #logger.debug(f"mean_areas: {mean_areas}")
+    
+    coefficient_value = std_areas / mean_areas
+    #logger.debug(f"coefficient_value: {coefficient_value}")
+    
+    hexagonal_cell_ratio = num_hexagonal / num_labels
+    #logger.debug(f"hexagonal_cell_ratio: {hexagonal_cell_ratio}")
+    
+    return num_labels, area, cell_density, std_areas, mean_areas, coefficient_value, num_hexagonal, hexagonal_cell_ratio, feature_counts, three_label_meetings, num_labels, labelled_image
 
 def find_label_meetings(labelled_image, num_labels):
     rows, cols = labelled_image.shape

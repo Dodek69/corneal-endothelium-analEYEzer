@@ -126,7 +126,7 @@ class AnalysisService(AbstractService):
             logger.debug('Pipeline finished')
             
             processed_data = []
-            metrics = ""
+            metrics = []
             
             for original_image, reference, prediction, file_path in zip(original_images, input_masks, predictions, input_images_paths):
                 logger.debug(f"Overlaying mask...")
@@ -146,17 +146,13 @@ class AnalysisService(AbstractService):
                 processed_data.append(AnalysisService.zip_encode(cv2.cvtColor(overlayed_image, cv2.COLOR_BGR2RGB), file_path, overlayed_path))
                 
                 logger.debug(f"Generated overlay path {str(generate_output_path(file_path, overlayed_path))}")
-                metrics = metrics + f"{file_path}\n"
                 
                 logger.debug(f"Calculating metrics for {file_path}")
                 skeleton_inverted = np.invert(prediction).astype(np.uint8)
-                cell_density, coefficient_value, hexagonal_cell_ratio, feature_counts, three_label_meetings, num_labels, labelled_image = calculate_metrics(skeleton_inverted, area_per_pixel)
+                num_labels, area, cell_density, std_areas, mean_areas, coefficient_value, num_hexagonal, hexagonal_cell_ratio, feature_counts, three_label_meetings, num_labels, labelled_image = calculate_metrics(skeleton_inverted, area_per_pixel)
 
-                logger.debug(f"Writing metrics...")
-                metrics = metrics + f"Cell Density: {cell_density}\n"
-                metrics = metrics + f"Coefficient Value: {coefficient_value}\n"
-                metrics = metrics + f"Hexagonal Cell Ratio: {hexagonal_cell_ratio}\n"
-                metrics = metrics + f"====\n"
+                logger.debug(f"Appending metrics...")
+                metrics.append((num_labels, area, cell_density, std_areas, mean_areas, coefficient_value, num_hexagonal, hexagonal_cell_ratio))
                 
                 if generate_labelled_images:
                     logger.debug(f"Generating labelled image...")
@@ -165,8 +161,6 @@ class AnalysisService(AbstractService):
                     logger.debug(f"Encoding labelled image...")
                     processed_data.append(AnalysisService.zip_encode(labels_visualization_image, file_path, labelled_images_path))
              
-            #processed_data.append((metrics.encode('utf-8'), 'metrics.txt'))
-            logger.debug(f'Metrics: {metrics}')
             
             for index, (data, filename) in enumerate(processed_data):
                 ordered_filename = f"{task_id}/{index:03d}_{filename}"
@@ -177,13 +171,13 @@ class AnalysisService(AbstractService):
             logger.debug(f'Metrics: {metrics}')
             retries = 0
             while retries < 5:
-                logger.debug(f'iteration {retries}')
+                #logger.debug(f'iteration {retries}')
                 for index, (data, filename) in enumerate(processed_data):
-                    logger.debug(f'generating ordered filename...')
+                    #logger.debug(f'generating ordered filename...')
                     ordered_filename = f"{task_id}\{index:03d}\{filename}"
-                    logger.debug(f'decoding data...')
+                    #logger.debug(f'decoding data...')
                     image_data_bytes = base64.b64decode(data.encode('utf-8'))
-                    logger.debug(f'uploading file...')
+                    #logger.debug(f'uploading file...')
                     minio_repo.upload_file_directly(image_data_bytes, ordered_filename)
                 logger.debug(f'listing files...')
                 files = minio_repo.list_files()
@@ -197,9 +191,12 @@ class AnalysisService(AbstractService):
                 retries += 1
             else:
                 logger.debug(f"upload failed after {retries} retries")
-                return processed_data, None
+                try:
+                    return (processed_data, metrics), None
+                except Exception as e:
+                    return (None, None), str(e)
             
         except Exception as e:
-            return None, str(e)
+            return (None, None), str(e)
         
-        return None, None
+        return (None, metrics), None

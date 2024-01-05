@@ -71,7 +71,11 @@ class AnalysisView(APIView):
         
         predictionsPath = request.data.get('predictionsPath')
         overlayedPath = request.data.get('overlayedPath')
-        areaParameter = float(request.data.get('areaParameter'))
+        
+        area_per_pixel = float(request.data.get('areaParameter'))
+        logger.debug(f"area_per_pixel: {area_per_pixel}")
+        
+        
         generateLabelledImages = request.data.get('generateLabelledImages')
         logger.debug(f"raw generate labelled images: {generateLabelledImages}")
         generateLabelledImages = generateLabelledImages == 'true'
@@ -125,7 +129,7 @@ class AnalysisView(APIView):
         
         logger.debug(f'Creating task to process {len(files)} images')
         try:
-            task = process_image.delay(file_bytes_list, file_paths, mask_bytes_list, predictionsPath, overlayedPath, areaParameter, generateLabelledImages, labelledImagesPath, model, model_file_extension, 'tiling', (512, 512), 32)
+            task = process_image.delay(file_bytes_list, file_paths, mask_bytes_list, predictionsPath, overlayedPath, area_per_pixel, generateLabelledImages, labelledImagesPath, model, model_file_extension, 'tiling', (512, 512), 32)
         except Exception as e:
             logger.error(f'Error while starting task: {str(e)}')
             return Response(str(e), status=status.HTTP_400_BAD_REQUEST)
@@ -198,9 +202,10 @@ class TaskStatusView(APIView):
             # is None
             logger.debug(f"task result does not exist")
             logger.debug(f"task result {result}")
-        
+            
         if state == 'SUCCESS':
-            if result and result[0] == None and result[1] == None:
+            (processed_data, metrics), error = result
+            if processed_data == None and error == None:
                 try:
                     files = minio_repo.list_files()
                     task_files = [f for f in files if f.startswith(f"{task_id}\\")]
@@ -222,6 +227,7 @@ class TaskStatusView(APIView):
                         })
                         
                         logger.debug(file_name.split('\\')[-1])
+                        
                             
                     if len(results) != len(task_files):
                         logger.error(f"results length does not match task_files length")
@@ -232,10 +238,9 @@ class TaskStatusView(APIView):
             else:
                 try:
                     logger.debug(f"getting result from task_status.result")
-                    processed_data, error = result
                     
                     if error:
-                        logger.debug(f"recieved error from task_status.result")
+                        logger.debug(f"recieved error from task_status.result: {error}")
                         return Response({"error": "error while processing images"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
                     
                     logger.debug(f"error not exist")
@@ -256,7 +261,22 @@ class TaskStatusView(APIView):
                 except Exception as e:
                     logger.error(f"Error while getting result from task_status.result: {str(e)}")
                     return Response({"error": "error"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-            return JsonResponse({'status': 'completed', 'results': results})
+            
+            metrics_string = [
+            {
+                'num_labels': num_labels,
+                'area': area,
+                'cell_density': cell_density,
+                'std_areas': std_areas,
+                'mean_areas': mean_areas,
+                'coefficient_value': coefficient_value,
+                'num_hexagonal': num_hexagonal,
+                'hexagonal_cell_ratio': hexagonal_cell_ratio,
+            }
+            
+            for num_labels, area, cell_density, std_areas, mean_areas, coefficient_value, num_hexagonal, hexagonal_cell_ratio in metrics]
+            
+            return JsonResponse({'status': 'completed', 'results': results, 'metrics': metrics_string})
         
         elif state == 'PENDING':
             logger.debug(f"task state is pending")
