@@ -1,5 +1,5 @@
 "use client"
-import { SetStateAction, useEffect, useState } from 'react';
+import { SetStateAction, useEffect, useState, useRef } from 'react';
 import { saveAs } from 'file-saver';
 import JSZip from 'jszip';
 import { UppyFile } from '@uppy/core';
@@ -53,10 +53,12 @@ function UploadPage() {
       }
       setImagesToZip(newSelection);
   };
+  const deleteFloatingFilesRef = useRef(deleteFloatingFiles); // Because deleteFloatingFiles is a state variable, it is not updated immediately. This is a workaround to get the updated value immediately.
 
   useEffect(() => {
     fetchPipelines();
-  }, []);
+    deleteFloatingFilesRef.current = deleteFloatingFiles;
+  }, [deleteFloatingFiles]);
 
   const fetchPipelines = async () => {
     try {
@@ -133,7 +135,7 @@ function UploadPage() {
   
           if (!maskFound) {
             console.log("Mask file not found for", file.name);
-            if (!deleteFloatingFiles) {
+            if (!deleteFloatingFilesRef.current) {
               newFiles.push(file.data as File);
               newMasks.push(null);
             }
@@ -214,7 +216,7 @@ function UploadPage() {
         formData.append(`masks`, correspondingMask);
       }
       else {
-        formData.append(`masks`, new File([], ''));
+        formData.append('masks', "none");
       }
     });
 

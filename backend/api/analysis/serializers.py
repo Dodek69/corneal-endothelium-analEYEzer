@@ -1,16 +1,25 @@
 from rest_framework import serializers
 from api.analysis.registers import pipelines_registry, available_pipelines
 
+class NullableFileField(serializers.FileField):
+    def to_internal_value(self, data):
+        if data == 'none' or data is None:
+            return None
+        return super().to_internal_value(data)
+
 # Define a serializer
 class AnalysisRequestSerializer(serializers.Serializer):
     input_images = serializers.ListField(
         child=serializers.FileField(),
         allow_empty=False
     )
+    
     masks = serializers.ListField(
-        child=serializers.FileField(),
-        allow_empty=False
+        child=NullableFileField(),
+        allow_empty=True,
+        required=False
     )
+
     input_paths = serializers.ListField(
         child=serializers.CharField(),
         allow_empty=False
