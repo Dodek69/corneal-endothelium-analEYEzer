@@ -173,8 +173,8 @@ class TaskStatusView(APIView):
             original_value = signing.loads(task_id)
             task_id, original_user_id = original_value.split(':')
         except signing.BadSignature:
-            logger.debug(f"bad signature")
-            return JsonResponse({'status': 'error'}, status=status.HTTP_400_BAD_REQUEST)
+            logger.warning(f"bad signature")
+            return jsend_fail("bad signature")
         
         logger.debug(f"task_id: {task_id}")
         logger.debug(f"type of task_id: {type(task_id)}")
@@ -184,12 +184,12 @@ class TaskStatusView(APIView):
         try:
             original_user_id = int(original_user_id)
         except ValueError:
-             logger.debug("original_user_id is not an integer")
-             return JsonResponse({'status': 'error'}, status=status.HTTP_400_BAD_REQUEST)
+             logger.warning("original_user_id is not an integer")
+             return jsend_fail("bad signature")
          
         if request.user.id != original_user_id:
-            logger.debug(f"user id does not match original user id")
-            return JsonResponse({'status': 'error'}, status=status.HTTP_400_BAD_REQUEST)
+            logger.warning(f"user id does not match original user id")
+            return jsend_fail("bad signature")
         
         task_status = app.AsyncResult(task_id)
         
@@ -211,12 +211,15 @@ class TaskStatusView(APIView):
                 try:
                     files = minio_repo.list_files()
                     task_files = [f for f in files if f.startswith(f"{task_id}\\")]
-                    
                     logger.debug(f"found {len(task_files)} task_files")
                     logger.debug(f"task_files: {task_files}")
-                        
+                except Exception as e:
+                    logger.error(f"Error while fetching files from repository: {str(e)}")
+                    return jsend_error()
+                
+                try:
                     task_files.sort()  # Sorting to maintain order
-            
+                
                     results = []
                     for file_name in task_files:
                         logger.debug(f"Downloading {file_name}...")
@@ -227,29 +230,33 @@ class TaskStatusView(APIView):
                             'filename': file_name.split('\\')[-1],  # Just the filename
                             'data': encoded_data  # Base64 encoded data
                         })
-                        
-                        logger.debug(file_name.split('\\')[-1])
-                        
-                            
+
                     if len(results) != len(task_files):
                         logger.error(f"results length does not match task_files length")
-                        return JsonResponse({'status': 'error'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                    
                 except Exception as e:
-                    logger.error(f"Error while getting result from minio: {str(e)}")
-                    return Response({"error": "error"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                    logger.error(f"Error while downloading files from repository: {str(e)}")
+                    return jsend_error()
+                finally:
+                    try:
+                        logger.debug(f"deleting files from minio")
+                        minio_repo.delete_files(task_files)
+                    except Exception as e:
+                        logger.error(f"Error while deleting files from repository: {str(e)}")
+                        return jsend_error()
             else:
                 try:
                     logger.debug(f"getting result from task_status.result")
                     
                     if error:
                         logger.debug(f"recieved error from task_status.result: {error}")
-                        return Response({"error": "error while processing images"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                        return jsend_error()
                     
                     logger.debug(f"error not exist")
                     
                     if not processed_data:
                         logger.debug(f"both processed_data and error does not exist")
-                        return Response({"error": "error"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                        return jsend_error()
                     
                     logger.debug(f"processed_data exist")
                     
@@ -262,7 +269,7 @@ class TaskStatusView(APIView):
                     for data, filename in processed_data]
                 except Exception as e:
                     logger.error(f"Error while getting result from task_status.result: {str(e)}")
-                    return Response({"error": "error"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                    return jsend_error()
             
             metrics_string = [
             {
@@ -277,26 +284,24 @@ class TaskStatusView(APIView):
             }
             
             for num_labels, area, cell_density, std_areas, mean_areas, coefficient_value, num_hexagonal, hexagonal_cell_ratio in metrics]
-            
-            return JsonResponse({'status': 'completed', 'results': results, 'metrics': metrics_string})
-        
+            return jsend_success({"state": "success", "results": results, "metrics": metrics_string})
         elif state == 'PENDING':
             logger.debug(f"task state is pending")
-            return Response({"task_id": task_id, "status": state})
+            return jsend_success({"state": "pending"})
         elif state == 'FAILURE':
             logger.debug(f"task state is failure")
-            return Response({"task_id": task_id, "status": state}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return jsend_success({"state": "failure"})
         elif state == 'REVOKED':
             logger.debug(f"task state is revoked")
-            return Response({"task_id": task_id, "status": state}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return jsend_error()
         elif state == 'STARTED':
             logger.debug(f"task state is started")
-            return Response({"task_id": task_id, "status": state})
+            return jsend_success({"state": "started"})
         elif state == 'RETRY':
             logger.debug(f"task state is retry")
-            return Response({"task_id": task_id, "status": state})
+            return jsend_error()
         elif state == 'RECEIVED':
             logger.debug(f"task state is received")
-            return Response({"task_id": task_id, "status": state})
+            return jsend_error()
         else:
-            return Response({"error": "error"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return jsend_error()

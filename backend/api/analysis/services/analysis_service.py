@@ -68,41 +68,48 @@ class AnalysisService(AbstractService):
         else:
             logger.debug(f'Custom model object name: {custom_model_object_name}')
             logger.debug(f'Custom model extension: {custom_model_extension}')
-            
-            with tempfile.NamedTemporaryFile(suffix=custom_model_extension) as tmp_file:
-                logger.debug(f"Downloading model to {tmp_file.name}...")
-                minio_repo.download_file(custom_model_object_name, tmp_file.name)
-                
-                if custom_model_extension == '.zip':
-                    with tempfile.TemporaryDirectory() as tmp_dir:
-                        
-                        logger.debug(f"Unzipping model to {tmp_dir}")
-                        with zipfile.ZipFile(tmp_file.name, 'r') as zip_ref:
-                            zip_ref.extractall(tmp_dir)
+            try:
+                with tempfile.NamedTemporaryFile(suffix=custom_model_extension) as tmp_file:
+                    logger.debug(f"Downloading model to {tmp_file.name}...")
+                    minio_repo.download_file(custom_model_object_name, tmp_file.name)
+                    
+                    if custom_model_extension == '.zip':
+                        with tempfile.TemporaryDirectory() as tmp_dir:
+                            
+                            logger.debug(f"Unzipping model to {tmp_dir}")
+                            with zipfile.ZipFile(tmp_file.name, 'r') as zip_ref:
+                                zip_ref.extractall(tmp_dir)
 
-                        logger.debug(f"listing files...")
+                            logger.debug(f"listing files...")
 
-                        # Use glob to find saved_model.pb
-                        model_files = glob.glob(f"{tmp_dir}/**/saved_model.pb", recursive=True)
+                            # Use glob to find saved_model.pb
+                            model_files = glob.glob(f"{tmp_dir}/**/saved_model.pb", recursive=True)
 
-                        if model_files:
-                            # Assuming the first match is the desired one
-                            model_dir = os.path.dirname(model_files[0])
-                        else:
-                            # Handle the case where saved_model.pb is not found
-                            logger.error("saved_model.pb not found in the unzipped files")
-                            return (None, None), "saved_model.pb not found in the zip file"
+                            if model_files:
+                                # Assuming the first match is the desired one
+                                model_dir = os.path.dirname(model_files[0])
+                            else:
+                                # Handle the case where saved_model.pb is not found
+                                logger.error("saved_model.pb not found in the unzipped files")
+                                return (None, None), "saved_model.pb not found in the zip file"
 
+                            logger.debug(f"Creating {pipeline_type}")
+                            model = model_wrapper_factory(model_dir, 'tensorflow')
+                    else:
                         logger.debug(f"Creating {pipeline_type}")
-                        model = model_wrapper_factory(model_dir, 'tensorflow')
-                else:
-                    logger.debug(f"Creating {pipeline_type}")
-                    model = model_wrapper_factory(tmp_file.name, 'tensorflow')
-                binarized_model = BinarizationWrapper(model, threshold=threshold)
-                pipeline = pipeline_factory(pipeline_type, binarized_model, target_dimensions=target_dimensions, downsampling_factor=downsampling_factor)
-                logger.info(f"Loaded model input shape: {pipeline.model.model.model.input_shape}")
-                logger.info(f"Loaded model output shape: {pipeline.model.model.model.output_shape}")
-            
+                        model = model_wrapper_factory(tmp_file.name, 'tensorflow')
+                    binarized_model = BinarizationWrapper(model, threshold=threshold)
+                    pipeline = pipeline_factory(pipeline_type, binarized_model, target_dimensions=target_dimensions, downsampling_factor=downsampling_factor)
+                    logger.info(f"Loaded model input shape: {pipeline.model.model.model.input_shape}")
+                    logger.info(f"Loaded model output shape: {pipeline.model.model.model.output_shape}")
+            except Exception as e:
+                logger.error(f"Error downloading model: {str(e)}")
+                return (None, None), str(e)
+            finally:
+                logger.debug(f"Deleting model file: custom_model_object_name")
+                minio_repo.delete_file(custom_model_object_name)
+                
+                
         logger.debug('Starting pipeline...')
         predictions, original_images = pipeline.process(input_images)
         logger.debug('Pipeline finished')

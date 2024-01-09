@@ -43,6 +43,7 @@ function UploadPage() {
 
   const [formErrors, setFormErrors] = useState<Record<string, string[]>>({});
   const [customModelParameter, setCustomModelParameter] = useState<File | null>(null);
+  let [previousTaskState, setPreviousTaskState] = useState<string>('');
 
   const handleImageSelect = (index: number, isSelected: boolean) => {
       const newSelection = new Set(imagesToZip);
@@ -129,7 +130,7 @@ function UploadPage() {
               newMasks.push(maskFile.data as File);
               newFiles.push(file.data as File);
               maskFound = true;
-              break; // Stop searching once a mask is found
+              break;
             }
           }
   
@@ -166,23 +167,32 @@ function UploadPage() {
             'Accept': 'application/json; indent=4',
             'Authorization': 'Basic ' + btoa(login + ':' + password),
           }});
+
+        const content = await response.json();
   
         if (response.ok) {
-          const data = await response.json();
-          if (data.status === 'completed') {
+          setMessage('Task ' + content.data.state);
+          if (content.data.state === 'success') {
             // Task is completed, handle the data
-            console.log('data.metrics length:', data.metrics.length);
-            console.log('data.results length:', data.results.length);
-            setMetrics(data.metrics);
-            setResultData(data.results); // Assuming the data contains the results
-            console.log("data.metrics:", data.metrics);
+            console.log('data.metrics length:', content.data.metrics.length);
+            console.log('data.results length:', content.data.results.length);
+            setMetrics(content.data.metrics);
+            setResultData(content.data.results); // Assuming the data contains the results
+            console.log("data.metrics:", content.data.metrics);
             completed = true;  // Stop polling
+            previousTaskState = '';
           } else {
+            if (content.data.state === 'pending' && previousTaskState === 'started') {
+                makeAnalysisRequest();
+                return;
+            }
+            previousTaskState = content.data.state;
             // Task is not completed, wait for the suggested interval and then poll again
             await new Promise(resolve => setTimeout(resolve, interval * 1000));
           }
+          
         } else {
-          setMessage('Failed to get task status');
+          setMessage('Error while processing task' + content.data);
           completed = true; // Stop polling on error
         }
       } catch (error) {
@@ -193,8 +203,7 @@ function UploadPage() {
     }
   }
 
-  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
+  const makeAnalysisRequest = async () => {
     if (inputImagesParameter.length === 0) {
       setMessage('Please select files to upload');
       return;
@@ -280,6 +289,11 @@ function UploadPage() {
     }
   };
 
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    makeAnalysisRequest();
+  };
+
   const displayErrors = (errors: Record<string, string[]>) => {
     for (const [field, messages] of Object.entries(errors)) {
       console.error(`Error in ${field}: ${messages.join(', ')}`);
@@ -298,8 +312,6 @@ function UploadPage() {
   const handleGenerateLebelledImagesChange = () => {
     setGenerateLabelledParameter(!generateLabelledParameter);
   };
-
-
 
   const handleModelChange = (event: { target: { value: SetStateAction<string>; }; }) => {
     setPipelineParameter(event.target.value);

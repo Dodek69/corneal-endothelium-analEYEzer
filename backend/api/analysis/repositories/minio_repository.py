@@ -50,10 +50,21 @@ class MinioRepository:
             logger.error(f"Failed to download file: {e}")
 
     def delete_file(self, object_name):
-        try:
-            self.s3_client.delete_object(Bucket=self.bucket_name, Key=object_name)
-        except ClientError as e:
-            logger.error(f"Failed to delete file: {e}")
+        self.s3_client.delete_object(Bucket=self.bucket_name, Key=object_name)
+        
+        
+    def delete_files(self, object_names):
+        # Create a list of objects to delete
+        objects_to_delete = [{'Key': object_name} for object_name in object_names]
+
+        # Delete all objects in a single request
+        response = self.s3_client.delete_objects(
+            Bucket=self.bucket_name,
+            Delete={
+                'Objects': objects_to_delete,
+                'Quiet': True  # Set to False if you want a response for each object deletion
+            }
+        )
 
     def list_files(self):
         try:
