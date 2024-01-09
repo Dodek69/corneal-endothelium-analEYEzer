@@ -6,7 +6,7 @@ from rest_framework.response import Response
 from rest_framework import status
 from api.analysis.tasks import process_image
 from django.http import JsonResponse
-from api.analysis.services.analysis_service import pipelines_registry
+from api.analysis.registers import pipelines_registry
 import zipfile
 import os
 import tempfile
@@ -16,20 +16,29 @@ import base64
 from django.core import signing
 from api.celery import app
 from rest_framework.permissions import AllowAny
-from api.celery import app
+from api.analysis.serializers import AnalysisRequestSerializer
 
-def generate_object_name(filename):
+def generate_object_name():
     unique_id = uuid.uuid4()
-    return f"{unique_id}-{filename}"
+    return f"{unique_id}"
 
-def unzip_model(zip_file_path):
-    # Create a temporary directory to extract the files
-    extract_path = tempfile.mkdtemp()
+def jsend_success(data, status=status.HTTP_200_OK):
+    return Response({
+        "status": "success",
+        "data": data
+    }, status=status)
+    
+def jsend_fail(data, status=status.HTTP_400_BAD_REQUEST):
+    return Response({
+        "status": "fail",
+        "data": data
+    }, status=status)
 
-    with zipfile.ZipFile(zip_file_path, 'r') as zip_ref:
-        zip_ref.extractall(extract_path)
-
-    return extract_path
+def jsend_error(message = "Internal server error", status=500):
+    return Response({
+        "status": "error",
+        "message": message
+    }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 minio_repo = MinioRepository(
     endpoint_url='http://minio:9000',
@@ -43,10 +52,21 @@ logger = logging.getLogger(__name__)
 class AnalysisView(APIView):
     parser_classes = (MultiPartParser,)
     def post(self, request, *args, **kwargs):
-        files = request.FILES.getlist('files')
-        file_paths = request.data.getlist('paths')
-        masks = request.data.getlist('masks')
-        logger.debug(f'Length of masks: {len(masks)}')
+        serializer = AnalysisRequestSerializer(data=request.data, context={'request': request})
+        if not serializer.is_valid():
+            logger.debug(f"validation error: {serializer.errors}")
+            return jsend_fail(serializer.errors)
+        
+        area_per_pixel = serializer.validated_data['area_per_pixel']
+        generate_labelled_images = serializer.validated_data['generate_labelled_images']
+        predictions_output_path = serializer.validated_data['predictions_output_path']
+        overlayed_output_path = serializer.validated_data['overlayed_output_path']
+            
+        input_images = serializer.validated_data['input_images']
+        input_paths = serializer.validated_data['input_paths']
+        masks = serializer.validated_data['masks']
+
+        """
         for i, mask in enumerate(masks):
             print("====================================")
             print(files[i])
@@ -56,84 +76,68 @@ class AnalysisView(APIView):
             if not mask:
                 print("mask is empty")
             print("====================================")
-        
-        
-        uploaded_model = request.FILES.get('uploadedModel')
-        if uploaded_model != None:
-            logger.debug(f"uploadedModel name is: {uploaded_model.name}")
-            model_file_name, model_file_extension = os.path.splitext(uploaded_model.name)
+        """
+        labelled_output_path = serializer.validated_data['labelled_output_path'] if generate_labelled_images else None
+ 
+        if 'pipeline' in serializer.validated_data:
+            pipeline = serializer.validated_data['pipeline']
+            custom_model_object_name = None
+            custom_model_extension = None
+            custom_model_pipeline = None
+            threshold = None
+            target_height = None
+            target_width = None
+            downsampling_factor = None
         else:
-            model_file_name = None
-            model_file_extension = None
-        logger.debug(f"uploaded_model: {uploaded_model}")
-        
-        logger.debug(f"uploadedModel extension: {model_file_extension}")
-        
-        predictionsPath = request.data.get('predictionsPath')
-        overlayedPath = request.data.get('overlayedPath')
-        
-        area_per_pixel = float(request.data.get('areaParameter'))
-        logger.debug(f"area_per_pixel: {area_per_pixel}")
-        
-        
-        generateLabelledImages = request.data.get('generateLabelledImages')
-        logger.debug(f"raw generate labelled images: {generateLabelledImages}")
-        generateLabelledImages = generateLabelledImages == 'true'
-        logger.debug(f"not raw generate labelled images: {generateLabelledImages}")
-        labelledImagesPath = request.data.get('labelledImagesPath')
-        selectedModel = request.data.get('model')
-        logger.debug(f"selectedModel: {selectedModel}")
-        try:
-            logger.debug(f"uploaded_model name: {uploaded_model.name}")
-        except:
-            pass
-        
-        #if selectedModel not in ['', 'deeplab']:
-        #    return Response("No such model", status=status.HTTP_400_BAD_REQUEST)
-        # check if model is in the registry of models
-        if selectedModel not in pipelines_registry:
-            logger.debug(f"model not in pipelines_registry")
-            logger.debug(f"model: {selectedModel}")
-            # validate uploaded model
-            if uploaded_model == None:
-                logger.info(f"uploaded_model is None")
-                return Response("No such model", status=status.HTTP_400_BAD_REQUEST)
-            logger.debug(f"unpacking uploaded_model: {uploaded_model}")
-            object_name = generate_object_name(uploaded_model.name)
-            
-            minio_repo.upload_file_directly(uploaded_model, object_name)
+            pipeline = None
+            custom_model = serializer.validated_data['custom_model']
+            custom_model_pipeline = serializer.validated_data['custom_model_pipeline']
+            threshold = serializer.validated_data['threshold']
+            target_height = serializer.validated_data['target_height']
+            target_width = serializer.validated_data['target_width']
+            downsampling_factor = serializer.validated_data['downsampling_factor']
 
-            model = object_name
-            logger.debug(f"model: {model}")
-        
-
-                # Clean up
-                #shutil.rmtree(temp_dir)
-            #uploaded_model = uploaded_model[0]
-            #file_path = default_storage.save('tmp/' + uploaded_model.name, uploaded_model)
-            #model_directory = unzip_model(file_path)
-            #model = TensorFlowModelWrapper(model_directory)
-        else:
-            model = selectedModel
+            logger.debug(f"custom_model: {custom_model}")
             
-        logger.debug(f"selected model: {selectedModel}")
-        for file in files:
-            logger.debug(f"file: {file}")
+            logger.debug(f"custom_model name is: {custom_model.name}")
+            custom_model_name, custom_model_extension = os.path.splitext(custom_model.name)
+            
+            logger.debug(f"custom_model_name: {custom_model_name}")
+            logger.debug(f"custom_model_extension: {custom_model_extension}")
+            
+            custom_model_object_name = generate_object_name()
+            minio_repo.upload_file_directly(custom_model, custom_model_object_name)
         
-        file_bytes_list = [file.read() for file in files]
+        file_bytes_list = [file.read() for file in input_images]
         
         # Convert masks to bytes if they are not None
         mask_bytes_list = [mask.read() if mask else None for mask in masks]
-        logger.debug(f'Length of mask_bytes_list: {len(mask_bytes_list)}')
         
+        #logger.debug(f"file_paths: {file_paths}")
+        #logger.debug(f"mask_bytes_list: {mask_bytes_list}")
+        logger.debug(f"len(file_bytes_list): {len(file_bytes_list)}")
+        logger.debug(f"len(mask_bytes_list): {len(mask_bytes_list)}")
+        logger.debug(f"input_paths: {input_paths}")
+        logger.debug(f"predictions_output_path: {predictions_output_path}")
+        logger.debug(f"overlayed_output_path: {overlayed_output_path}")
+        logger.debug(f"labelled_output_path: {labelled_output_path}")
+        logger.debug(f"area_per_pixel: {area_per_pixel}")
+        logger.debug(f"generate_labelled_images: {generate_labelled_images}")
+        logger.debug(f"pipeline: {pipeline}")
+        logger.debug(f"custom_model_object_name: {custom_model_object_name}")
+        logger.debug(f"custom_model_extension: {custom_model_extension}")
+        logger.debug(f"custom_model_pipeline: {custom_model_pipeline}")
+        logger.debug(f"target_height: {target_height}")
+        logger.debug(f"target_width: {target_width}")
+        logger.debug(f"downsampling_factor: {downsampling_factor}")
+        logger.debug(f"threshold: {threshold}")
         
-        logger.debug(f'Creating task to process {len(files)} images')
+        logger.debug(f'Creating task to process {len(input_images)} images')
         try:
-            task = process_image.delay(file_bytes_list, file_paths, mask_bytes_list, predictionsPath, overlayedPath, area_per_pixel, generateLabelledImages, labelledImagesPath, model, model_file_extension, 'tiling', (512, 512), 32)
+            task = process_image.delay(file_bytes_list, input_paths, mask_bytes_list, predictions_output_path, overlayed_output_path, area_per_pixel, generate_labelled_images, labelled_output_path, pipeline, custom_model_object_name, custom_model_extension, custom_model_pipeline, (target_height, target_width), downsampling_factor, threshold)
         except Exception as e:
             logger.error(f'Error while starting task: {str(e)}')
             return Response(str(e), status=status.HTTP_400_BAD_REQUEST)
-        
         
         user_id = request.user.id
         logger.debug(f'started task id: {task.id}')
@@ -148,13 +152,11 @@ class AnalysisView(APIView):
         #return Response(error, status=status.HTTP_400_BAD_REQUEST)
         logger.debug(f"task id: {signed_task_id}")
         response_data = {
-            "task_id": signed_task_id,
-            "status": "started",
             "polling_endpoint": f"http://localhost:8000/task-status/{signed_task_id}/",
             "polling_interval": 5
         }
 
-        return Response(response_data)
+        return jsend_success(response_data, status=status.HTTP_202_ACCEPTED)
         
     
 class ModelsView(APIView):
@@ -163,7 +165,7 @@ class ModelsView(APIView):
         model_names = list(pipelines_registry.keys())
         logger.debug(f"model names: {model_names}")
         return Response(model_names)
-
+    
 class TaskStatusView(APIView):
     def get(self, request, task_id):
         try:

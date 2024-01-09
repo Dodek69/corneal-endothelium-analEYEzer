@@ -10,56 +10,64 @@ const DragAndDropNoSSR = dynamic(() => import( '@/components/DragAndDrop/DragAnd
 const path = require('path');
 
 function UploadPage() {
-  const [files, setFiles] = useState<File[]>([]);
-  const [masks, setMasks] = useState<(File | null)[]>([]);
+  const [inputImagesParameter, setInputImagesParameter] = useState<File[]>([]);
+  const [masksParameter, setMasksParameter] = useState<(File | null)[]>([]);
   const [maskDirectories, setMaskDirectories] = useState<string[]>(['../../Mask/', '../../K/']);
-  const [predictionsPath, setPredictionsPath] = useState<string>('../../Predictions/{name}{ext}');
-  const [overlayedPath, setOverlayedPath] = useState<string>('../../Overlayed/{name}{ext}');
+  const [predictionsOutputPathParameter, setPredictionsOutputPathParameter] = useState<string>('../../Predictions/{name}{ext}');
+  const [overlayedOutputPathParameter, setOverlayedOutputPathParameter] = useState<string>('../../Overlayed/{name}{ext}');
   const [areaParameter, setAreaParameter] = useState<string>('1');
-  const [generateLabelledImages, setGenerateLebelledImage] = useState<boolean>(true);
-  const [labelledImagesPath, setLabelledImagePath] = useState<string>('../../Labelled/{name}{ext}');
+  const [thresholdParameter, setThresholdParameter] = useState<string>('0.1');
+  const [generateLabelledParameter, setGenerateLabelledParameter] = useState<boolean>(true);
+  const [labelledOutputPathParameter, setLabelledOutputPathParameter] = useState<string>('../../Labelled/{name}{ext}');
   
   const [message, setMessage] = useState<string>('');
   const [deleteFloatingFiles, setDeleteFloatingFiles] = useState<boolean>(true);
   //const [deleteFloatingMasks, setDeleteFloatingMasks] = useState<boolean>(true);
   const [compareMasks, setCompareMasks] = useState<boolean>(true);
 
+  const [resultData, setResultData] = useState<{filename: string, data: string}[]>([]);
+  const [imagesToZip, setImagesToZip] = useState<Set<number>>(new Set());
 
-  const [imageData, setImageData] = useState<{filename: string, data: string}[]>([]);
-  const [selectedImages, setSelectedImages] = useState<Set<number>>(new Set());
 
-
-  const [models, setModels] = useState([]);
-  const [selectedModel, setSelectedModel] = useState('');
+  const [pipelines, setPipelines] = useState([]);
+  const [pipelineParameter, setPipelineParameter] = useState('');
   const [login, setLogin] = useState('domicio088');
-  const [password, setPassword] = useState('');
+  const [password, setPassword] = useState('bA2XSoEu');
 
   const [metrics, setMetrics] = useState<{num_labels: number, area: number, cell_density: number, std_areas: number, mean_areas: number, coefficient_value: number, num_hexagonal: number, hexagonal_cell_ratio: number}[]>([]);
+  const [customModelPipelines, setCustomModelPipelines] = useState(["Tiling",  "Resizing with padding", "Dynamic resizing with padding"]);
+  const [customModelPipelineParameter, setCustomModelPipelineParameter] = useState('');
+  const [targetHeightParameter, setTargetHeightParameter] = useState<string>('128');
+  const [targetWidthParameter, setTargetWidthParameter] = useState<string>('128');
+  const [downsamplingFactorParameter, setDownsamplingFactorParameter] = useState<string>('32');
+
+  const [formErrors, setFormErrors] = useState<Record<string, string[]>>({});
+  const [customModelParameter, setCustomModelParameter] = useState<File | null>(null);
 
   const handleImageSelect = (index: number, isSelected: boolean) => {
-      const newSelection = new Set(selectedImages);
+      const newSelection = new Set(imagesToZip);
       if (isSelected) {
           newSelection.add(index);
       } else {
           newSelection.delete(index);
       }
-      setSelectedImages(newSelection);
+      setImagesToZip(newSelection);
   };
 
   useEffect(() => {
-    fetchModels();
+    fetchPipelines();
   }, []);
 
-
-  const fetchModels = async () => {
+  const fetchPipelines = async () => {
     try {
         const response = await fetch('http://localhost:8000/analysis/models');
         const data = await response.json();
-        setModels(data);
+        setPipelines(data);
     } catch (error) {
-        console.error('Error fetching parameters:', error);
+        console.error('Error fetching pipelines:', error);
     }
-};
+  };
+
 
   function getMaskPaths(originalImagePath: string) {
     const originalDir = path.dirname(originalImagePath);
@@ -71,17 +79,32 @@ function UploadPage() {
   const downloadSelectedImages = () => {
     const zip = new JSZip();
 
-    selectedImages.forEach(index => {
-        const image = imageData[index];
+    imagesToZip.forEach(index => {
+        const image = resultData[index];
         zip.file(image.filename, image.data, {base64: true});
     });
+
+    let metricsString = "";
+    metrics.forEach(metric => {
+      metricsString += `path: ${resultData[metrics.indexOf(metric)].filename}\n`;
+      metricsString += `Num Labels: ${metric.num_labels}\n`;
+      metricsString += `Area: ${metric.area}\n`;
+      metricsString += `Cell Density: ${metric.cell_density}\n`;
+      metricsString += `Std Areas: ${metric.std_areas}\n`;
+      metricsString += `Mean Areas: ${metric.mean_areas}\n`;
+      metricsString += `Coefficient Value: ${metric.coefficient_value}\n`;
+      metricsString += `Num Hexagonal: ${metric.num_hexagonal}\n`;
+      metricsString += `Hexagonal Cell Ratio: ${metric.hexagonal_cell_ratio}\n`;
+      metricsString += "\n";
+    });
+    zip.file("metrics.txt", metricsString);
 
     zip.generateAsync({type: 'blob'}).then(content => {
         saveAs(content, 'selected_images.zip');
     });
   };
 
-    const handleFileChange = async (files: (UppyFile)[]) => {
+    const handleInputImagesChange = async (files: (UppyFile)[]) => {
       if (files.length === 0) {
         setMessage('Please select a file or folder to upload');
         return;
@@ -124,22 +147,18 @@ function UploadPage() {
     console.log(newMasks.length);
     console.log("====================================");
 
-    setFiles(prevFiles => [...prevFiles, ...newFiles]);
+    setInputImagesParameter(prevFiles => [...prevFiles, ...newFiles]);
     if (compareMasks)
-      setMasks(prevMasks => [...prevMasks, ...newMasks]);
+      setMasksParameter(prevMasks => [...prevMasks, ...newMasks]);
     else
-      setMasks(prevMasks => [...prevMasks, ...Array(newFiles.length).fill(null)]);
+      setMasksParameter(prevMasks => [...prevMasks, ...Array(newFiles.length).fill(null)]);
   };
 
-  async function pollForResult(endpoint: string, taskId: any, interval: number) {
-    const pollingEndpoint = endpoint;
-
-    
-  
+  async function pollForResult(endpoint: string, interval: number) {
     let completed = false;
     while (!completed) {
       try {
-        const response = await fetch(pollingEndpoint, {
+        const response = await fetch(endpoint, {
           method: 'GET',
           headers: {
             'Accept': 'application/json; indent=4',
@@ -153,7 +172,7 @@ function UploadPage() {
             console.log('data.metrics length:', data.metrics.length);
             console.log('data.results length:', data.results.length);
             setMetrics(data.metrics);
-            setImageData(data.results); // Assuming the data contains the results
+            setResultData(data.results); // Assuming the data contains the results
             console.log("data.metrics:", data.metrics);
             completed = true;  // Stop polling
           } else {
@@ -174,21 +193,22 @@ function UploadPage() {
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (files.length === 0) {
-      setMessage('Please select a file or folder to upload');
+    if (inputImagesParameter.length === 0) {
+      setMessage('Please select files to upload');
       return;
     }
 
-    if (!uploadedModel && !selectedModel) {
-      setMessage('No model');
+    if (pipelineParameter === "upload" && !customModelParameter) {
+      setMessage('Please upload a model');
       return;
     }
+
     const formData = new FormData();
-    files.forEach((file, index) => {
-      formData.append('files', file);
-      formData.append('paths', file.webkitRelativePath || file.name);
+    inputImagesParameter.forEach((file, index) => {
+      formData.append('input_images', file);
+      formData.append('input_paths', file.webkitRelativePath || file.name);
       // Assuming masks is an array of file or null
-      const correspondingMask = masks[index];
+      const correspondingMask = masksParameter[index];
 
       if (correspondingMask) {
         formData.append(`masks`, correspondingMask);
@@ -198,15 +218,27 @@ function UploadPage() {
       }
     });
 
-    formData.append('model', selectedModel);
-    // uploadedModel or None
-    console.log("sending uploadedModel:", uploadedModel);
-    formData.append('uploadedModel', uploadedModel || '');
-    formData.append('predictionsPath', predictionsPath);
-    formData.append('overlayedPath', overlayedPath);
-    formData.append('areaParameter', areaParameter);
-    formData.append('generateLabelledImages', generateLabelledImages.toString());
-    formData.append('labelledImagesPath', labelledImagesPath);
+    formData.append('generate_labelled_images', generateLabelledParameter.toString());
+    if (generateLabelledParameter)
+      formData.append('labelled_output_path', labelledOutputPathParameter);
+
+    formData.append('predictions_output_path', predictionsOutputPathParameter);
+    formData.append('overlayed_output_path', overlayedOutputPathParameter);
+    formData.append('area_per_pixel', areaParameter);
+
+    if (pipelineParameter === "upload") {
+      formData.append('custom_model', customModelParameter || '');
+      formData.append('custom_model_pipeline', customModelPipelineParameter);
+      formData.append('threshold', thresholdParameter);
+      formData.append('target_height', targetHeightParameter);
+      formData.append('target_width', targetWidthParameter);
+      formData.append('downsampling_factor', downsamplingFactorParameter);
+    }
+    else {
+      formData.append('pipeline', pipelineParameter);
+    }
+    
+
     try {
       const response = await fetch('http://localhost:8000/analysis/', {
         headers: {
@@ -217,23 +249,43 @@ function UploadPage() {
         body: formData,
       });
 
-      if (response.ok) {
-        const initialData = await response.json();
-  
-        // Start polling if task has started successfully
-        if (initialData.status === 'started') {
-          pollForResult(initialData.polling_endpoint, initialData.task_id, initialData.polling_interval);
-        } else {
-          setMessage('Task did not start successfully');
-        }
-      } else {
-        setMessage('Failed to start task');
+      if (response.status === 202) {
+        setMessage('Task accepted');
+        setFormErrors({});
+        const content = await response.json();
+        pollForResult(content.data.polling_endpoint, content.data.polling_interval);
+        return;
       }
+      if (response.status === 403) {
+        setFormErrors({
+          login: ['Invalid login or password'],
+        });
+        setMessage('Invalid login or password');
+        return;
+      }
+
+      if (response.status === 400) {
+        const content = await response.json();
+        displayErrors(content.data);
+        setFormErrors(content.data);
+        return;
+      }
+      setMessage('Unexpected error');
+
     } catch (error) {
-      console.error('Task start failed', error);
-      setMessage('Failed to start task');
+      console.error('Failed to make request:', error);
+      setMessage('Failed to make request');
     }
   };
+
+  const displayErrors = (errors: Record<string, string[]>) => {
+    for (const [field, messages] of Object.entries(errors)) {
+      console.error(`Error in ${field}: ${messages.join(', ')}`);
+      setMessage(`Error in ${field}: ${messages.join(', ')}`);
+    }
+  };
+
+
   const handleDeleteFloatingFilesChange = () => {
     setDeleteFloatingFiles(!deleteFloatingFiles);
   };
@@ -241,17 +293,19 @@ function UploadPage() {
   const handleCompareMasksChange = () => {
     setCompareMasks(!compareMasks);
   };
-  const handleGenerateLebelledImageChange = () => {
-    setGenerateLebelledImage(!generateLabelledImages);
+  const handleGenerateLebelledImagesChange = () => {
+    setGenerateLabelledParameter(!generateLabelledParameter);
   };
 
-  const [uploadedModel, setUploadedModel] = useState<File | null>(null);
+
 
   const handleModelChange = (event: { target: { value: SetStateAction<string>; }; }) => {
-    setSelectedModel(event.target.value);
+    setPipelineParameter(event.target.value);
   };
 
-  // create a function that validates the model files
+  const handlePipelineChange = (event: { target: { value: SetStateAction<string>; }; }) => {
+    setCustomModelPipelineParameter(event.target.value);
+  };
 
   function validateSavedModelFormatFiles(files: UppyFile[]): boolean {
     let hasSavedModelPb = false;
@@ -294,7 +348,7 @@ const validateModelFiles = (files: UppyFile[]): boolean => {
     return false;
   }
   if (files.length === 1) {
-    const allowedSingleFileExtensions = ['h5', 'keras'];
+    const allowedSingleFileExtensions = ['h5', 'keras', 'zip'];
 
     const file = files[0];
     const extension = file.extension.toLowerCase();
@@ -312,64 +366,62 @@ const validateModelFiles = (files: UppyFile[]): boolean => {
   }
 };
 
-const handleModelFiles = async (files: (UppyFile)[]) => {
-    
-    if (files.length > 1) {
-      files.forEach(file => {
-        const relativePath = file.meta.relativePath as string;
-        console.log("handleModelFiles: file relative path:", relativePath);
-        let parts = relativePath.split("/");  // Split the path by '/'
-        parts.shift();  // Remove the first element (the folder name)
-        let newPath = parts.join("/");  // Join the remaining parts back together
-      
-        console.log("handleModelFiles: file new path:", newPath);  // This will output 'fingerprint.pb'
-        file.meta.newRelativePath = newPath;
-      });
-      console.log("handleModelFiles: processed relative path files:", files);
-    }
-
-    if (!validateModelFiles(files)) {
-      console.log("handleModelFiles validation failed");
-      return;
-    }
-
-    if (files.length === 1) {
-      const file = files[0];
-      
-      console.log("handleModelFiles: recieved a single file:", file);
-      //const fileContent = await file.data.arrayBuffer();
-      //console.log("handleModelFiles: setting type to ", files[0].type);
-      setUploadedModel(file.data as File); // Directly handle the single file's Blob
-      console.log("handleModelFiles: uploadedModel:", uploadedModel);
-      return;
-    }
-    console.log("handleModelFiles recieved multiple files: ", files);
-
-    const zip = new JSZip();
+const handleModelFilesChange = async (files: (UppyFile)[]) => {
+  if (files.length > 1) {
     files.forEach(file => {
-      console.log("handleModelFiles: file relative path:", file.meta.newRelativePath);
-      zip.file(file.meta.newRelativePath as string, file.data, {base64: true});
+      const relativePath = file.meta.relativePath as string;
+      console.log("handleModelFiles: file relative path:", relativePath);
+      let parts = relativePath.split("/");  // Split the path by '/'
+      parts.shift();  // Remove the first element (the folder name)
+      let newPath = parts.join("/");  // Join the remaining parts back together
+    
+      console.log("handleModelFiles: file new path:", newPath);  // This will output 'fingerprint.pb'
+      file.meta.newRelativePath = newPath;
     });
-
-    try {
-      const content = await zip.generateAsync({type: 'blob'});
-      
-      // Convert the blob to a File
-      const zipFileName = "your_zip_file_name.zip"; // Replace with your desired file name
-      const zipFile = new File([content], zipFileName, {type: 'application/zip'});
-
-      setUploadedModel(zipFile); // Assuming setUploadedModel is a function that sets the state or otherwise stores the file
-      console.log("handleModelFiles: uploadedModel:", zipFile);
-    } catch (error) {
-      console.error("Error generating zip: ", error);
-    }
+    console.log("handleModelFiles: processed relative path files:", files);
   }
+
+  if (!validateModelFiles(files)) {
+    console.log("handleModelFilesChange validation failed");
+    return;
+  }
+
+  if (files.length === 1) {
+    const file = files[0];
+    
+    console.log("handleModelFilesChange: recieved a single file:", file);
+    //const fileContent = await file.data.arrayBuffer();
+    //console.log("handleModelFilesChange: setting type to ", files[0].type);
+    setCustomModelParameter(file.data as File); // Directly handle the single file's Blob
+    console.log("handleModelFilesChange: custom_model:", customModelParameter);
+    return;
+  }
+  console.log("handleModelFilesChange recieved multiple files: ", files);
+
+  const zip = new JSZip();
+  files.forEach(file => {
+    console.log("handleModelFilesChange: file relative path:", file.meta.newRelativePath);
+    zip.file(file.meta.newRelativePath as string, file.data, {base64: true});
+  });
+
+  try {
+    const content = await zip.generateAsync({type: 'blob'});
+    
+    // Convert the blob to a File
+    const zipFileName = "your_zip_file_name.zip"; // Replace with your desired file name
+    const zipFile = new File([content], zipFileName, {type: 'application/zip'});
+
+    setCustomModelParameter(zipFile); // Assuming setcustom_model is a function that sets the state or otherwise stores the file
+    console.log("handleModelFilesChange: customModel:", zipFile);
+  } catch (error) {
+    console.error("Error generating zip: ", error);
+  }
+}
 
   return (
     <div>
       <form onSubmit={handleSubmit}>
       <div>
-        {/*add login and password inputs*/}
         <label>Login:</label>
         <input 
           type="text" 
@@ -378,17 +430,19 @@ const handleModelFiles = async (files: (UppyFile)[]) => {
           style={{ color: 'black' }}
         />
         <label>Password:</label>
+
         <input 
           type="password" 
           value={password} 
           onChange={(e) => setPassword(e.target.value)} 
           style={{ color: 'black' }}
         />
-
-
+        {formErrors.login && (
+            <div className="text-red-500 text-sm">{formErrors.login.join(', ')}</div>
+        )}
       </div>
         <div>
-          <DragAndDropNoSSR onFileChange={handleFileChange} />
+          <DragAndDropNoSSR onFileChange={handleInputImagesChange} />
         </div>
         <div>
             <label>
@@ -410,15 +464,18 @@ const handleModelFiles = async (files: (UppyFile)[]) => {
                 Compare with masks
             </label>
         </div>
-        <div>
-            <label>
-                <input
-                    type="checkbox"
-                    checked={generateLabelledImages}
-                    onChange={handleGenerateLebelledImageChange}
-                />
-                Generate labelled images
-            </label>
+        <div className="flex items-center space-x-2">
+          <label>
+              <input
+                  type="checkbox"
+                  checked={generateLabelledParameter}
+                  onChange={handleGenerateLebelledImagesChange}
+              />
+              Generate labelled images
+          </label>
+          {formErrors.generate_labelled_images && (
+            <div className="text-red-500 text-sm">{formErrors.generate_labelled_images.join(', ')}</div>
+          )}
         </div>
         <div>
           <label>Mask Directories:</label>
@@ -439,35 +496,44 @@ const handleModelFiles = async (files: (UppyFile)[]) => {
             Add More
           </button>
         </div>
-        <div>
+        <div className="flex items-center space-x-2">
           <label>Predictions relative path:</label>
           <input 
             type="text" 
-            value={predictionsPath} 
-            onChange={(e) => setPredictionsPath(e.target.value)} 
+            value={predictionsOutputPathParameter} 
+            onChange={(e) => setPredictionsOutputPathParameter(e.target.value)} 
             style={{ color: 'black' }}
           />
+          {formErrors.predictions_output_path && (
+            <div className="text-red-500 text-sm">{formErrors.predictions_output_path.join(', ')}</div>
+          )}
         </div>
-        <div>
+        <div className="flex items-center space-x-2">
           <label>Overlayed images relative path:</label>
           <input 
             type="text" 
-            value={overlayedPath} 
-            onChange={(e) => setOverlayedPath(e.target.value)} 
+            value={overlayedOutputPathParameter} 
+            onChange={(e) => setOverlayedOutputPathParameter(e.target.value)} 
             style={{ color: 'black' }}
           />
+          {formErrors.overlayed_output_path && (
+            <div className="text-red-500 text-sm">{formErrors.overlayed_output_path.join(', ')}</div>
+          )}
         </div>
-        { generateLabelledImages && 
-        <div>
+        { generateLabelledParameter && 
+        <div className="flex items-center space-x-2">
           <label>Labelled image relative path</label>
           <input 
             type="text" 
-            value={labelledImagesPath} 
-            onChange={(e) => setLabelledImagePath(e.target.value)} 
+            value={labelledOutputPathParameter} 
+            onChange={(e) => setLabelledOutputPathParameter(e.target.value)} 
             style={{ color: 'black' }}
           />
+          {formErrors.labelled_output_path && (
+            <div className="text-red-500 text-sm">{formErrors.labelled_output_path.join(', ')}</div>
+          )}
         </div>}
-        <div>
+        <div className="flex items-center space-x-2">
           <label>Area in mm:</label>
           <input 
             type="text" 
@@ -475,21 +541,87 @@ const handleModelFiles = async (files: (UppyFile)[]) => {
             onChange={(e) => setAreaParameter(e.target.value)} 
             style={{ color: 'black' }}
           />
+          {formErrors.area_per_pixel && (
+            <div className="text-red-500 text-sm">{formErrors.area_per_pixel.join(', ')}</div>
+          )}
         </div>
         <div>
-          <select value={selectedModel} onChange={handleModelChange} style={{ color: 'black' }}>
+          <select value={pipelineParameter} onChange={handleModelChange} style={{ color: 'black' }}>
             <option value="" style={{ color: 'black' }}>Select a Model</option>
-            {models.map((model, index) => (
+            {pipelines.map((model, index) => (
               <option key={index} value={model} style={{ color: 'black' }}>{model}</option>
             ))}
             <option value="upload" style={{ color: 'black' }}>Upload Your Own Model</option>
           </select>
 
-          {selectedModel === "upload" && (
+          {pipelineParameter === "upload" && (
             <div>
-              <DragAndDropNoSSR onFileChange={handleModelFiles} />
+              <DragAndDropNoSSR onFileChange={handleModelFilesChange} />
               <p>Upload .h5, .keras files or a zipped model directory.</p>
-          </div>
+              <select value={customModelPipelineParameter} onChange={handlePipelineChange} style={{ color: 'black' }}>
+                <option value="" style={{ color: 'black' }}>Select a pipeline</option>
+                {customModelPipelines.map((pipeline, index) => (
+                  <option key={index} value={pipeline} style={{ color: 'black' }}>{pipeline}</option>
+                ))}
+              </select>
+              <div className="flex items-center space-x-2">
+                <label>Binarization threshold:</label>
+                <input
+                  type="text" 
+                  value={thresholdParameter}
+                  onChange={(e) => setThresholdParameter(e.target.value)} 
+                  style={{ color: 'black' }}
+                />
+                {formErrors.threshold && (
+                  <div className="text-red-500 text-sm">{formErrors.threshold.join(', ')}</div>
+                )}
+              </div>
+              {(customModelPipelineParameter === "Tiling" || customModelPipelineParameter === "Resizing with padding") && (
+                <div>
+                  <div className="flex items-center space-x-2">
+                    <label>Target height:</label>
+                    <input
+                      type="text" 
+                      value={targetHeightParameter}
+                      onChange={(e) => setTargetHeightParameter(e.target.value)}
+                      style={{ color: 'black' }}
+                    />
+                    {formErrors.target_height && (
+                      <div className="text-red-500 text-sm">{formErrors.target_height.join(', ')}</div>
+                    )}
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <label>Target width:</label>
+                    <input
+                      type="text" 
+                      value={targetWidthParameter}
+                      onChange={(e) => setTargetWidthParameter(e.target.value)}
+                      style={{ color: 'black' }}
+                    />
+                    {formErrors.target_width && (
+                      <div className="text-red-500 text-sm">{formErrors.target_width.join(', ')}</div>
+                    )}
+                  </div>
+                </div>
+                )}
+                {customModelPipelineParameter === "Dynamic resizing with padding" && (
+                <div>
+                  <label htmlFor="downsamplingFactor">Downsampling factor:</label>
+                  <div className="flex items-center space-x-2">
+                    <input
+                      id="downsamplingFactor"
+                      type="text"
+                      value={downsamplingFactorParameter}
+                      onChange={(e) => setDownsamplingFactorParameter(e.target.value)}
+                      className="text-black"
+                    />
+                    {formErrors.downsampling_factor && (
+                      <div className="text-red-500 text-sm">{formErrors.downsampling_factor.join(', ')}</div>
+                    )}
+                  </div>
+                </div>
+                )}
+            </div>
           )}
         </div>
         <button type="submit">Upload</button>
@@ -500,16 +632,15 @@ const handleModelFiles = async (files: (UppyFile)[]) => {
         <button onClick={downloadSelectedImages}>Download Selected Images</button>
       </div>
       <div>
-      {imageData.map((image, index) => {
+      {resultData.map((image, index) => {
     // This calculation finds the corresponding metrics index
     // for every group of 3 images.
-    const apiDataIndex = Math.floor(index / 3);
+    const numImagesPerPrediction = (generateLabelledParameter ? 3 : 2);
+    const apiDataIndex = Math.floor(index / numImagesPerPrediction);
 
     return (
         <div key={index}>
-
-            {/* Render metrics info once every 3 images */}
-            {index % 3 === 0 && (
+            {index % numImagesPerPrediction === 0 && (
                 <div>
                     <p>Num Labels: {metrics[apiDataIndex]?.num_labels}</p>
                     <p>Area: {metrics[apiDataIndex]?.area}</p>
@@ -528,7 +659,7 @@ const handleModelFiles = async (files: (UppyFile)[]) => {
             {/* Checkbox for selection */}
             <input
                 type="checkbox"
-                checked={selectedImages.has(index)}
+                checked={imagesToZip.has(index)}
                 onChange={(e) => handleImageSelect(index, e.target.checked)}
             />
         </div>

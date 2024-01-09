@@ -1,9 +1,7 @@
 from django.urls import include, path
 from rest_framework import routers
 from api.user_management.views import UserViewSet, GroupViewSet
-from api.analysis.views import AnalysisView
-from api.analysis.views import TaskStatusView
-from api.analysis.views import ModelsView
+from api.analysis.views import AnalysisView, TaskStatusView, ModelsView
 
 router = routers.DefaultRouter()
 router.register(r'users', UserViewSet)
