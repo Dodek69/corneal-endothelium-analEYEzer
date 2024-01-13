@@ -7,9 +7,9 @@ from api.analysis.model_wrappers.binarization_wrapper import BinarizationWrapper
 from api.analysis.model_wrappers.ragged_binarization_wrapper import RaggedBinarizationWrapper
 
 model_paths = {
-    'custom': 'api/analysis/models/fixed30',
-    'sm_unet-fixed': 'api/analysis/models/cea_model_type=sm_unet_backbone=mobilenet_num_filters=8_encoder_freeze=True_loss=dice_learning_rate=0.001_optimizer=adam_1703884072_strong_augumentations.keras',
-    'sm_unet-variable': 'api/analysis/models/cea_model_type=sm_unet_backbone=mobilenet_num_filters=8_encoder_freeze=True_loss=dice_learning_rate=0.001_optimizer=adam_1704219885_strong_augumentations_input_shape=(None None 3).keras',
+    'custom': 'api/analysis/models/custom',
+    'sm_unet-fixed': 'api/analysis/models/cea_sm_unet_fixed.keras',
+    'sm_unet-variable': 'api/analysis/models/cea_sm_unet_variable.keras',
 }
 
 models = {
