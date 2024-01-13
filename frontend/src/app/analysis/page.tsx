@@ -663,7 +663,7 @@ const handleModelFilesChange = async (files: (UppyFile)[]) => {
                     <p>Mean Areas: {metrics[apiDataIndex]?.mean_areas}</p>
                     <p>Coefficient Value: {metrics[apiDataIndex]?.coefficient_value}</p>
                     <p>Num Hexagonal: {metrics[apiDataIndex]?.num_hexagonal}</p>
-                    <p>Hexagonal Cell Ratio: {metrics[apiDataIndex]?.hexagonal_cell_ratio}</p>
+                    <p>Percentage of hexagonal cells: {metrics[apiDataIndex]?.hexagonal_cell_ratio}</p>
                 </div>
             )}
 

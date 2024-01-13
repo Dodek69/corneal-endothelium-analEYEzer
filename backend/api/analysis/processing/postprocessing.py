@@ -114,7 +114,7 @@ def calculate_metrics(skeleton_inverted, area_per_pixel):
     coefficient_value = std_areas / mean_areas
     #logger.debug(f"coefficient_value: {coefficient_value}")
     
-    hexagonal_cell_ratio = num_hexagonal / num_labels
+    hexagonal_cell_ratio = num_hexagonal / num_labels * 100
     #logger.debug(f"hexagonal_cell_ratio: {hexagonal_cell_ratio}")
     
     return num_labels, area, cell_density, std_areas, mean_areas, coefficient_value, num_hexagonal, hexagonal_cell_ratio, feature_counts, three_label_meetings, num_labels, labelled_image
