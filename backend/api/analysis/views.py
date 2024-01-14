@@ -34,11 +34,11 @@ def jsend_fail(data, status=status.HTTP_400_BAD_REQUEST):
         "data": data
     }, status=status)
 
-def jsend_error(message = "Internal server error", status=500):
+def jsend_error(message = "Internal server error", status=status.HTTP_500_INTERNAL_SERVER_ERROR):
     return Response({
         "status": "error",
         "message": message
-    }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    }, status=status)
 
 minio_repo = MinioRepository(
     endpoint_url='http://minio:9000',
