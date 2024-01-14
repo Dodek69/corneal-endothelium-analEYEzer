@@ -263,6 +263,7 @@ function UploadPage() {
       if (response.status === 202) {
         setMessage('Task accepted');
         setFormErrors({});
+        previousTaskState = 'accepted';
         const content = await response.json();
         pollForResult(content.data.polling_endpoint, content.data.polling_interval);
         return;
